@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="820" viewBox="0 0 1000 820" font-family="Arial, sans-serif">
+  <rect width="1000" height="820" fill="#ffffff"/>
+  <text x="30" y="30" font-size="20" font-weight="bold">Полная схема пайки: делитель + MCP6002 (буфер + усилитель) + ESP32</text>
+  <text x="30" y="52" font-size="12" fill="#888">Все резисторы, конденсаторы и номера ног подписаны — можно паять прямо по схеме.</text>
+
+  <!-- ============ ПИТАНИЕ ============ -->
+  <line x1="60" y1="90" x2="940" y2="90" stroke="#c0392b" stroke-width="3"/>
+  <text x="20" y="95" font-size="16" font-weight="bold" fill="#c0392b">+5В</text>
+  <line x1="60" y1="770" x2="940" y2="770" stroke="#2c3e50" stroke-width="3"/>
+  <text x="20" y="775" font-size="16" font-weight="bold" fill="#2c3e50">GND</text>
+
+  <!-- ============ MCP6002 корпус ============ -->
+  <rect x="420" y="200" width="160" height="460" fill="#fdf2e9" stroke="#c0392b" stroke-width="2"/>
+  <text x="450" y="225" font-size="15" font-weight="bold" fill="#c0392b">MCP6002</text>
+  <text x="440" y="245" font-size="11" fill="#888">(DIP-8 / SOIC-8)</text>
+
+  <!-- Пины левой стороны -->
+  <text x="410" y="270" font-size="12" text-anchor="end">1: OUT A</text>
+  <text x="410" y="330" font-size="12" text-anchor="end">2: IN- A</text>
+  <text x="410" y="390" font-size="12" text-anchor="end">3: IN+ A</text>
+  <text x="410" y="450" font-size="12" text-anchor="end">4: Vss (GND)</text>
+  <!-- Пины правой стороны -->
+  <text x="590" y="450" font-size="12">5: IN+ B</text>
+  <text x="590" y="510" font-size="12">6: IN- B</text>
+  <text x="590" y="570" font-size="12">7: OUT B</text>
+  <text x="590" y="630" font-size="12">8: Vdd (+5В)</text>
+
+  <line x1="420" y1="270" x2="380" y2="270" stroke="#333" stroke-width="2"/>
+  <line x1="420" y1="330" x2="380" y2="330" stroke="#333" stroke-width="2"/>
+  <line x1="420" y1="390" x2="380" y2="390" stroke="#333" stroke-width="2"/>
+  <line x1="420" y1="450" x2="380" y2="450" stroke="#333" stroke-width="2"/>
+  <line x1="580" y1="450" x2="620" y2="450" stroke="#333" stroke-width="2"/>
+  <line x1="580" y1="510" x2="620" y2="510" stroke="#333" stroke-width="2"/>
+  <line x1="580" y1="570" x2="620" y2="570" stroke="#333" stroke-width="2"/>
+  <line x1="580" y1="630" x2="620" y2="630" stroke="#333" stroke-width="2"/>
+
+  <!-- Питание микросхемы: Vdd(8) -> +5В, Vss(4) -> GND -->
+  <line x1="620" y1="630" x2="700" y2="630" stroke="#c0392b" stroke-width="2"/>
+  <line x1="700" y1="630" x2="700" y2="90" stroke="#c0392b" stroke-width="2"/>
+  <line x1="380" y1="450" x2="330" y2="450" stroke="#2c3e50" stroke-width="2"/>
+  <line x1="330" y1="450" x2="330" y2="770" stroke="#2c3e50" stroke-width="2"/>
+
+  <!-- Развязывающий конденсатор 0.1мкФ впритык к Vdd/Vss -->
+  <line x1="700" y1="630" x2="730" y2="630" stroke="#333" stroke-width="1"/>
+  <line x1="730" y1="615" x2="730" y2="645" stroke="#333" stroke-width="3"/>
+  <line x1="738" y1="615" x2="738" y2="645" stroke="#333" stroke-width="1"/>
+  <line x1="738" y1="630" x2="760" y2="630" stroke="#333" stroke-width="1"/>
+  <line x1="760" y1="630" x2="760" y2="700" stroke="#333" stroke-width="1"/>
+  <line x1="760" y1="700" x2="330" y2="700" stroke="#333" stroke-width="1"/>
+  <text x="745" y="610" font-size="11">C3</text>
+  <text x="745" y="595" font-size="11">0.1мкФ</text>
+
+  <!-- ============ КАНАЛ А: БУФЕР ВХОДА ============ -->
+  <text x="30" y="130" font-size="15" font-weight="bold" fill="#2980b9">Канал А — буфер входа газа (усиление x1)</text>
+
+  <!-- Ручка газа -->
+  <text x="20" y="270" font-size="12" font-weight="bold">Ручка газа (сигнал)</text>
+  <line x1="30" y1="280" x2="90" y2="280" stroke="#333" stroke-width="2"/>
+  <rect x="90" y="260" width="50" height="40" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="95" y="255" font-size="12">R1 10к</text>
+  <line x1="140" y1="280" x2="200" y2="280" stroke="#333" stroke-width="2"/>
+
+  <!-- узел делителя -->
+  <circle cx="200" cy="280" r="4" fill="#2980b9"/>
+  <line x1="200" y1="280" x2="200" y2="340" stroke="#333" stroke-width="2"/>
+  <rect x="180" y="340" width="40" height="50" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="225" y="370" font-size="12">R2 24к</text>
+  <line x1="200" y1="390" x2="200" y2="450" stroke="#333" stroke-width="2"/>
+  <line x1="200" y1="450" x2="330" y2="450" stroke="#2c3e50" stroke-width="2"/>
+
+  <!-- к IN+ A (pin3) -->
+  <line x1="200" y1="280" x2="200" y2="390" stroke="#2980b9" stroke-width="2" stroke-dasharray="0"/>
+  <line x1="200" y1="390" x2="380" y2="390" stroke="#2980b9" stroke-width="2"/>
+
+  <!-- OUT A (pin1) -> IN- A (pin2), единичное усиление -->
+  <line x1="380" y1="270" x2="340" y2="270" stroke="#333" stroke-width="2"/>
+  <line x1="340" y1="270" x2="340" y2="330" stroke="#333" stroke-width="2"/>
+  <line x1="340" y1="330" x2="380" y2="330" stroke="#333" stroke-width="2"/>
+  <text x="250" y="310" font-size="10" fill="#888">(выход на вход "-", ед. усиление)</text>
+
+  <!-- OUT A -> ESP32 GPIO34 -->
+  <line x1="380" y1="270" x2="250" y2="270" stroke="#2980b9" stroke-width="2" stroke-dasharray="4,2"/>
+  <text x="30" y="180" font-size="12" fill="#2980b9" font-weight="bold">OUT A -&gt; ESP32 GPIO34 (ADC)</text>
+
+  <!-- ============ КАНАЛ Б: УСИЛИТЕЛЬ ВЫХОДА ============ -->
+  <text x="620" y="130" font-size="15" font-weight="bold" fill="#c0392b">Канал Б — усилитель выхода (x1.27, 3.3В-&gt;4.2В)</text>
+
+  <!-- ESP32 GPIO25 (ЦАП) -> IN+ B -->
+  <text x="700" y="440" font-size="12" fill="#c0392b" font-weight="bold">ESP32 GPIO25 (ЦАП)</text>
+  <line x1="800" y1="450" x2="620" y2="450" stroke="#c0392b" stroke-width="2" stroke-dasharray="4,2"/>
+
+  <!-- IN- B делитель обратной связи -->
+  <line x1="620" y1="510" x2="700" y2="510" stroke="#333" stroke-width="2"/>
+  <line x1="700" y1="510" x2="700" y2="570" stroke="#333" stroke-width="2"/>
+  <rect x="680" y="570" width="40" height="40" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="725" y="595" font-size="12">R3 10к</text>
+  <line x1="700" y1="610" x2="700" y2="700" stroke="#333" stroke-width="2"/>
+  <line x1="700" y1="700" x2="330" y2="700" stroke="#2c3e50" stroke-width="1"/>
+
+  <!-- Обратная связь R4 от OUT B к IN- B -->
+  <line x1="700" y1="510" x2="700" y2="440" stroke="#333" stroke-width="2"/>
+  <line x1="700" y1="440" x2="820" y2="440" stroke="#333" stroke-width="2"/>
+  <rect x="800" y="470" width="40" height="40" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="845" y="495" font-size="12">R4 2.7к</text>
+  <line x1="820" y1="440" x2="820" y2="470" stroke="#333" stroke-width="2"/>
+  <line x1="820" y1="510" x2="820" y2="570" stroke="#333" stroke-width="2"/>
+  <line x1="820" y1="570" x2="620" y2="570" stroke="#333" stroke-width="2"/>
+
+  <!-- Выход к контроллеру -->
+  <line x1="820" y1="570" x2="900" y2="570" stroke="#c0392b" stroke-width="3"/>
+  <text x="905" y="565" font-size="13" fill="#c0392b" font-weight="bold">-&gt; вход газа</text>
+  <text x="905" y="580" font-size="13" fill="#c0392b" font-weight="bold">контроллера</text>
+  <text x="905" y="598" font-size="11" fill="#888">(0-4.2В)</text>
+
+  <!-- ============ Примечания снизу ============ -->
+  <rect x="30" y="720" width="940" height="0" fill="none"/>
+  <text x="30" y="800" font-size="12" fill="#555">Общий GND: ESP32, MCP6002 (пин 4), делитель, контроллер, аккумулятор минус — всё вместе.</text>
+</svg>

@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="680" viewBox="0 0 900 680" font-family="Arial, sans-serif">
+  <rect width="900" height="680" fill="#ffffff"/>
+  <text x="30" y="30" font-size="20" font-weight="bold">Согласование напряжений газа (0-4.2В ручка/контроллер, 0-3.3В ESP32)</text>
+
+  <!-- ===================== ВХОД: делитель ===================== -->
+  <text x="30" y="70" font-size="16" font-weight="bold" fill="#2980b9">ВХОД: ручка газа -&gt; ESP32 (понижение делителем)</text>
+
+  <line x1="40" y1="100" x2="40" y2="260" stroke="#333" stroke-width="2"/>
+  <text x="10" y="95" font-size="13">Ручка газа</text>
+  <text x="10" y="112" font-size="13">(0-4.2В)</text>
+
+  <line x1="40" y1="140" x2="140" y2="140" stroke="#333" stroke-width="2"/>
+  <rect x="140" y="120" width="60" height="40" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="145" y="115" font-size="13">R1 10к</text>
+  <line x1="200" y1="140" x2="260" y2="140" stroke="#333" stroke-width="2"/>
+
+  <circle cx="260" cy="140" r="4" fill="#2980b9"/>
+  <line x1="260" y1="140" x2="330" y2="140" stroke="#2980b9" stroke-width="2"/>
+  <text x="335" y="145" font-size="13" fill="#2980b9">-&gt; ESP32 GPIO34 (ADC)</text>
+
+  <line x1="260" y1="140" x2="260" y2="220" stroke="#333" stroke-width="2"/>
+  <rect x="240" y="220" width="40" height="60" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="285" y="255" font-size="13">R2 24к</text>
+  <line x1="260" y1="280" x2="260" y2="320" stroke="#333" stroke-width="2"/>
+  <text x="230" y="340" font-size="13">GND</text>
+
+  <text x="330" y="180" font-size="12" fill="#888">4.2В x R2/(R1+R2) &#8776; 3.0В — с запасом ниже 3.3В</text>
+
+  <!-- ===================== ВЫХОД: усилитель на ОУ ===================== -->
+  <text x="30" y="400" font-size="16" font-weight="bold" fill="#c0392b">ВЫХОД: ESP32 ЦАП -&gt; моторконтроллер (усиление на LM358)</text>
+
+  <!-- Питание ОУ -->
+  <line x1="500" y1="420" x2="500" y2="460" stroke="#c0392b" stroke-width="2"/>
+  <text x="470" y="415" font-size="13" fill="#c0392b">+12В (с аккумулятора)</text>
+
+  <!-- Op-amp triangle -->
+  <polygon points="500,460 500,540 580,500" fill="#fdf2e9" stroke="#c0392b" stroke-width="2"/>
+  <text x="510" y="505" font-size="14" font-weight="bold" fill="#c0392b">LM358</text>
+
+  <!-- GND ОУ -->
+  <line x1="500" y1="540" x2="500" y2="580" stroke="#333" stroke-width="2"/>
+  <text x="480" y="600" font-size="13">GND</text>
+
+  <!-- Неинвертирующий вход (+) от ЦАП -->
+  <line x1="380" y1="480" x2="500" y2="480" stroke="#333" stroke-width="2"/>
+  <text x="330" y="465" font-size="13">ESP32 GPIO25 (ЦАП, 0-3.3В)</text>
+  <text x="505" y="478" font-size="12">+</text>
+
+  <!-- Инвертирующий вход (-) с делителем обратной связи -->
+  <text x="505" y="520" font-size="12">-</text>
+  <line x1="500" y1="518" x2="440" y2="518" stroke="#333" stroke-width="2"/>
+  <line x1="440" y1="518" x2="440" y2="580" stroke="#333" stroke-width="2"/>
+  <rect x="420" y="580" width="40" height="30" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="465" y="600" font-size="13">R3 10к</text>
+  <line x1="440" y1="610" x2="440" y2="630" stroke="#333" stroke-width="2"/>
+  <text x="410" y="650" font-size="13">GND</text>
+
+  <!-- Обратная связь R4 от выхода к инвертирующему входу -->
+  <line x1="440" y1="518" x2="440" y2="440" stroke="#333" stroke-width="2"/>
+  <line x1="440" y1="440" x2="640" y2="440" stroke="#333" stroke-width="2"/>
+  <rect x="500" y="420" width="0" height="0"/>
+  <rect x="560" y="425" width="50" height="30" fill="none" stroke="#333" stroke-width="2" transform="translate(0,0)"/>
+  <text x="565" y="418" font-size="13">R4 2.7к</text>
+  <line x1="640" y1="440" x2="640" y2="500" stroke="#333" stroke-width="2"/>
+
+  <!-- Выход ОУ -->
+  <line x1="580" y1="500" x2="640" y2="500" stroke="#c0392b" stroke-width="2"/>
+  <circle cx="640" cy="500" r="4" fill="#c0392b"/>
+  <line x1="640" y1="500" x2="750" y2="500" stroke="#c0392b" stroke-width="2"/>
+  <text x="655" y="490" font-size="13" fill="#c0392b">-&gt; на вход газа</text>
+  <text x="655" y="520" font-size="13" fill="#c0392b">моторконтроллера (0-4.2В)</text>
+
+  <text x="330" y="640" font-size="12" fill="#888">Коэффициент: 1 + R4/R3 = 1 + 2.7/10 &#8776; 1.27 -&gt; 3.3В x 1.27 &#8776; 4.2В</text>
+
+  <text x="30" y="675" font-size="12" fill="#555">Общий провод (GND) один на всех: ESP32, LM358, моторконтроллер, аккумулятор минус — без этого схема работать не будет.</text>
+</svg>

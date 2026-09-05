@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Превью веб-морды (симулятор, без платы)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { background:#0b0b0b; color:#eee; font-family:sans-serif; margin:0; padding:0; }
+  .banner { background:#3a2a00; color:#ffcc66; padding:10px 15px; font-size:13px; text-align:center; }
+  nav { display:flex; gap:6px; padding:10px; background:#1a1a1a; flex-wrap:wrap; position:sticky; top:0; z-index:10; }
+  nav button { padding:8px 12px; border:none; border-radius:6px; background:#333; color:#eee; cursor:pointer; font-size:14px; }
+  nav button.active { background:#4a90d9; }
+  .page { display:none; padding:20px; max-width:420px; margin:auto; }
+  .page.wide { max-width:700px; }
+  .page.active { display:block; }
+  h1 { font-size:20px; }
+  h2 { font-size:16px; margin:15px 0 5px; }
+  h3 { font-size:14px; margin:15px 0 5px; color:#aaa; }
+  label { display:block; margin-top:12px; font-size:14px; }
+  input[type=number], input[type=range], select { width:100%; padding:6px; box-sizing:border-box; background:#222; color:#eee; border:1px solid #444; border-radius:4px; }
+  input[type=range] { padding:0; }
+  button.action { margin-top:15px; padding:10px; width:100%; font-size:15px; border-radius:8px; border:none; background:#333; color:#eee; }
+  button.action:active { background:#555; }
+  .chk { display:flex; align-items:center; gap:8px; margin-top:12px; }
+  .chk input { width:auto; }
+  .warn { background:#5c1a1a; color:#fff; padding:12px; border-radius:8px; margin-bottom:20px; font-weight:bold; font-size:14px; }
+  a.card { display:block; background:#333; color:#fff; padding:15px; border-radius:8px; margin-bottom:10px; text-decoration:none; cursor:pointer; }
+  #grid { display:inline-grid; grid-template-columns:repeat(32,9px); grid-template-rows:repeat(8,9px); gap:1px; background:#000; padding:8px; margin-bottom:15px; }
+  .px { width:9px; height:9px; background:#222; }
+  .px.on { background:#fff; }
+  .dpad { display:grid; grid-template-columns:60px 60px 60px; grid-template-rows:60px 60px 60px; gap:5px; justify-content:center; margin:10px auto; }
+  .dpad button { font-size:18px; padding:0; border:none; border-radius:8px; background:#333; color:#eee; }
+  .dpad button:active { background:#555; }
+  .row { display:flex; gap:8px; justify-content:center; margin:8px 0; flex-wrap:wrap; }
+  .row button { padding:12px 16px; font-size:15px; border-radius:8px; border:none; background:#333; color:#eee; }
+  .row button.active2 { background:#4a90d9; }
+  .val { font-weight:bold; }
+  .hint { color:#888; font-size:13px; margin-top:10px; }
+  .simhint { color:#ffcc66; font-size:12px; margin-top:4px; }
+  .levels { border-left:2px solid #333; padding-left:10px; margin-top:10px; }
+  fieldset { border:1px solid #333; border-radius:8px; margin-top:15px; padding:10px 12px; }
+  legend { padding:0 6px; color:#aaa; font-size:13px; }
+
+  /* Конструктор v2 */
+  table.pinTable { width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
+  table.pinTable th, table.pinTable td { padding:6px 4px; border-bottom:1px solid #222; text-align:left; vertical-align:middle; }
+  .badge { display:inline-block; font-size:10px; padding:2px 6px; border-radius:4px; background:#333; color:#aaa; margin-right:3px; margin-bottom:2px; }
+  .badge.type { background:#204060; color:#a8d0ff; }
+  .badge.warn { background:#5c3a1a; color:#ffcc66; }
+  .badge.crit { background:#5c1a1a; color:#ff8888; }
+  .pipeline { display:flex; align-items:center; gap:8px; background:#1a1a1a; border-radius:8px; padding:15px; margin-top:10px; font-size:13px; flex-wrap:wrap; }
+  .pipeline .box { background:#204060; color:#a8d0ff; padding:8px 10px; border-radius:6px; }
+  .pipeline .arrow { color:#666; }
+  .ruleBlock { background:#1a1a1a; border-radius:8px; padding:12px; margin-top:12px; }
+  .ruleBlock h4 { margin:0 0 8px; font-size:14px; }
+  .ruleCols { display:flex; gap:15px; flex-wrap:wrap; }
+  .ruleCol { flex:1; min-width:150px; }
+  .ruleCol .colTitle { font-size:12px; color:#888; margin-bottom:6px; }
+  .ruleCol label { display:flex; align-items:center; gap:6px; margin-top:6px; font-weight:normal; font-size:13px; }
+  .ruleCol label input { width:auto; }
+</style>
+</head>
+<body>
+
+<div class="banner">Это браузерная симуляция веб-интерфейса — плата не подключена. Логика дисплея и меню повторена точно, но "педалирование" и реальная ручка газа эмулируются вручную.</div>
+
+<nav>
+  <button data-page="panel" class="active">Панель</button>
+  <button data-page="settingsHub">Настройки</button>
+</nav>
+
+<!-- ===================== ПАНЕЛЬ ===================== -->
+<div class="page active" id="page-panel">
+  <h2>Матрица 8x32 (превью)</h2>
+  <div id="grid"></div>
+
+  <h3>Виртуальная ручка газа (только в симуляторе)</h3>
+  <input type="range" min="0" max="100" value="0" id="virtThrottle">
+  <div class="simhint">Тянет "сырой" сигнал 0-100%, дальше проходит через калибровку из настроек газа (слепая зона).</div>
+
+  <h3>Джойстик (5 кнопок)</h3>
+  <div class="dpad">
+    <div></div><button onclick="onJoystick('up')">&uarr;</button><div></div>
+    <button onclick="onJoystick('left')">&larr;</button><button onclick="onJoystick('ok')">OK</button><button onclick="onJoystick('right')">&rarr;</button>
+    <div></div><button onclick="onJoystick('down')">&darr;</button><div></div>
+  </div>
+
+  <h3>Кнопки на руле</h3>
+  <div class="row">
+    <button id="btnHeadlight" onclick="toggleHeadlight()">Фара</button>
+    <button id="btnTurnLeft" onclick="toggleTurnLeft()">Поворот &larr;</button>
+    <button id="btnTurnRight" onclick="toggleTurnRight()">Поворот &rarr;</button>
+  </div>
+  <div class="row">
+    <button id="btnHorn" onmousedown="setHorn(true)" onmouseup="setHorn(false)" ontouchstart="setHorn(true)" ontouchend="setHorn(false)">Гудок (держать)</button>
+    <button id="btnBrake" onclick="toggleBrake()">Тормоз (тест)</button>
+  </div>
+
+  <h3>Состояние (для отладки)</h3>
+  <div class="hint" id="stateDump"></div>
+</div>
+
+<!-- ===================== ХАБ НАСТРОЕК ===================== -->
+<div class="page" id="page-settingsHub">
+  <h1>Настройки</h1>
+  <div class="warn">&#9888; Тормозные ручки должны быть ОБЯЗАТЕЛЬНО подключены напрямую в моторконтроллер для безопасности!</div>
+  <a class="card" onclick="showPage('settingsThrottle')">Газ &rarr;</a>
+  <a class="card" onclick="showPage('settingsPas')">PAS &rarr;</a>
+  <a class="card" onclick="showPage('settingsCruise')">Круиз-контроль &rarr;</a>
+  <a class="card" onclick="showPage('constructor')">Конструктор пинов и событий &rarr;</a>
+</div>
+
+<!-- ===================== ГАЗ ===================== -->
+<div class="page" id="page-settingsThrottle">
+  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:#4a90d9">&larr; Настройки</a></p>
+  <h1>Настройка газа</h1>
+
+  <fieldset>
+    <legend>Калибровка (слепая зона)</legend>
+    <p class="hint">Ручка газа не всегда выдаёт честные 0-100% — в покое и на полном выкручивании часто есть "мёртвый" запас. Тут отсекаем его с обеих сторон, отдельно для входа (что реально приходит с ручки) и выхода (что уходит в моторконтроллер).</p>
+    <label>Вход — минимум (%): <span class="val" id="inMinVal">0</span></label>
+    <input type="range" min="0" max="99" id="inMinSlider" value="0" oninput="onCalibChange()">
+    <label>Вход — максимум (%): <span class="val" id="inMaxVal">100</span></label>
+    <input type="range" min="1" max="100" id="inMaxSlider" value="100" oninput="onCalibChange()">
+    <label>Выход — минимум (%): <span class="val" id="outMinVal">0</span></label>
+    <input type="range" min="0" max="99" id="outMinSlider" value="0" oninput="onCalibChange()">
+    <label>Выход — максимум (%): <span class="val" id="outMaxVal">100</span></label>
+    <input type="range" min="1" max="100" id="outMaxSlider" value="100" oninput="onCalibChange()">
+  </fieldset>
+
+  <fieldset>
+    <legend>Сглаживание разгона/торможения</legend>
+    <div class="chk"><input type="checkbox" id="thrEnabled"><label for="thrEnabled">Сглаживание включено (по умолчанию — выключено, газ повторяет ручку 1:1)</label></div>
+    <label>Плавность разгона: <span class="val" id="accelVal">0</span></label>
+    <input type="range" min="0" max="99" id="accelSlider" value="0" oninput="document.getElementById('accelVal').innerText=this.value">
+    <label>Плавность торможения: <span class="val" id="decelVal">0</span></label>
+    <input type="range" min="0" max="99" id="decelSlider" value="0" oninput="document.getElementById('decelVal').innerText=this.value">
+  </fieldset>
+
+  <button class="action" onclick="saveThrottle()">Сохранить</button>
+</div>
+
+<!-- ===================== PAS ===================== -->
+<div class="page" id="page-settingsPas">
+  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:#4a90d9">&larr; Настройки</a></p>
+  <h1>Настройка PAS</h1>
+  <label>Количество уровней (0-9)</label>
+  <input type="number" min="0" max="9" id="pasCount" value="5" oninput="renderPasLevels()">
+  <div id="pasLevels" class="levels"></div>
+  <button class="action" onclick="autoDistributePas()">Автораспределение</button>
+  <button class="action" onclick="savePas()">Сохранить</button>
+</div>
+
+<!-- ===================== КРУИЗ ===================== -->
+<div class="page" id="page-settingsCruise">
+  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:#4a90d9">&larr; Настройки</a></p>
+  <h1>Настройка круиз-контроля</h1>
+  <label>Количество уровней (0-20)</label>
+  <input type="number" min="0" max="20" id="cruiseCount" value="10" oninput="renderCruiseLevels()">
+  <div id="cruiseLevels" class="levels"></div>
+  <button class="action" onclick="autoDistributeCruise()">Автораспределение</button>
+  <div class="chk"><input type="checkbox" id="cruiseUseLast" checked><label for="cruiseUseLast">При включении — последний использованный уровень</label></div>
+  <label>Уровень по умолчанию (если галочка выше снята)</label>
+  <input type="number" min="1" max="20" id="cruiseDefLvl" value="1">
+  <div class="chk"><input type="checkbox" id="cruiseCancelThr"><label for="cruiseCancelThr">Сбрасывать круиз при касании газа</label></div>
+  <div class="chk"><input type="checkbox" id="cruiseResumeBrk"><label for="cruiseResumeBrk">После тормоза — восстанавливать круиз при касании газа</label></div>
+  <button class="action" onclick="saveCruise()">Сохранить</button>
+</div>
+
+<!-- ===================== КОНСТРУКТОР v2 ===================== -->
+<div class="page wide" id="page-constructor">
+  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:#4a90d9">&larr; Настройки</a></p>
+  <h1>Конструктор пинов и событий</h1>
+
+  <h3>Газ — особый случай (не событие, а поток сигнала)</h3>
+  <div class="pipeline">
+    <div class="box">Газ вход (аналог)</div>
+    <div class="arrow">&rarr;</div>
+    <div class="box">Обработка: калибровка + сглаживание + PAS + круиз</div>
+    <div class="arrow">&rarr;</div>
+    <div class="box">Газ выход (ЦАП)</div>
+  </div>
+  <p class="hint">Пины для входа/выхода газа назначаются в таблице ниже как обычно. Сама обработка настраивается отдельно — <a href="#" onclick="showPage('settingsThrottle');return false" style="color:#4a90d9">на странице "Газ"</a>.</p>
+
+  <h3>Пины платы</h3>
+  <p class="hint">Для каждого физического пина выбери, какую роль он играет. Тип пина показан бэйджем — если пин не подходит по типу (например, не ЦАП для выхода газа), такая роль просто не появится в списке выбора.</p>
+  <table class="pinTable" id="pinTable"></table>
+
+  <h3>События (для кнопок)</h3>
+  <p class="hint">На одно нажатие можно повесить сразу несколько действий — например поворотник плюс тик пищалки. Показаны только те кнопки, которым уже назначен пин.</p>
+  <div id="rulesArea"></div>
+
+  <button class="action" onclick="saveConstructor()">Сохранить (эмуляция — на плате потребует перезагрузки)</button>
+</div>
+
+<script>
+// ===================== Навигация =====================
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.page === id));
+}
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => showPage(b.dataset.page)));
+
+// ===================== Состояние (эмуляция прошивки) =====================
+let state = {
+  pasLevelsCount: 5,
+  pasLevelPercent: [20,40,60,80,100],
+  pasCurrentLevel: 0,
+  cruiseLevelsCount: 10,
+  cruiseLevelPercent: [10,20,30,40,50,60,70,80,90,100],
+  cruiseTargetLevel: 1,
+  cruiseSelectLevel: 1,
+  cruiseEngaged: false,
+  cruiseUseLastLevel: true,
+  cruiseDefaultLevel: 1,
+  cruiseCancelOnThrottle: false,
+  cruiseResumeAfterBrake: false,
+  cruisePendingResume: false,
+  menuState: 'IDLE',
+  headlightOn: false,
+  turnLeftActive: false,
+  turnRightActive: false,
+  turnBlinkState: false,
+  hornActive: false,
+  brakeActive: false,
+  virtualThrottleRaw: 0,       // "сырой" сигнал с виртуальной ручки, 0-100%
+  throttleInMinPct: 0, throttleInMaxPct: 100,
+  throttleOutMinPct: 0, throttleOutMaxPct: 100,
+};
+
+function calibrateThrottle(rawPct){
+  const inMin = state.throttleInMinPct, inMax = Math.max(state.throttleInMaxPct, inMin+1);
+  const outMin = state.throttleOutMinPct, outMax = Math.max(state.throttleOutMaxPct, outMin+1);
+  const clamped = Math.min(Math.max(rawPct, inMin), inMax);
+  const norm = (clamped - inMin) / (inMax - inMin);
+  return Math.round(outMin + norm * (outMax - outMin));
+}
+function currentThrottlePct(){ return calibrateThrottle(state.virtualThrottleRaw); }
+
+let changeIndicator = null;
+function markChange(dir){ changeIndicator = {dir, until: Date.now()+450}; }
+
+// ===================== Шрифт 5x7 =====================
+const FONT = {
+  P:[0b11110,0b10001,0b10001,0b11110,0b10000,0b10000,0b10000],
+  T:[0b11111,0b00100,0b00100,0b00100,0b00100,0b00100,0b00100],
+  C:[0b01110,0b10001,0b10000,0b10000,0b10000,0b10001,0b01110],
+  B:[0b11110,0b10001,0b10001,0b11110,0b10001,0b10001,0b11110],
+  W:[0b10001,0b10001,0b10001,0b10101,0b10101,0b11011,0b10001],
+  E:[0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b11111],
+  L:[0b10000,0b10000,0b10000,0b10000,0b10000,0b10000,0b11111],
+  U:[0b10001,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110],
+  M:[0b10001,0b11011,0b10101,0b10101,0b10001,0b10001,0b10001],
+};
+const ARROW_LEFT  = [0b00001,0b00011,0b00111,0b01111,0b00111,0b00011,0b00001];
+const ARROW_RIGHT = [0b10000,0b11000,0b11100,0b11110,0b11100,0b11000,0b10000];
+const ARROW_UP    = [0b00100,0b01110,0b10101,0b00100,0b00100,0b00100,0b00100];
+const ARROW_DOWN  = [0b00100,0b00100,0b00100,0b00100,0b10101,0b01110,0b00100];
+const DIGITS = [
+  [0b01110,0b10001,0b10011,0b10101,0b11001,0b10001,0b01110],
+  [0b00100,0b01100,0b00100,0b00100,0b00100,0b00100,0b01110],
+  [0b01110,0b10001,0b00001,0b00010,0b00100,0b01000,0b11111],
+  [0b11111,0b00010,0b00100,0b00010,0b00001,0b10001,0b01110],
+  [0b00010,0b00110,0b01010,0b10010,0b11111,0b00010,0b00010],
+  [0b11111,0b10000,0b11110,0b00001,0b00001,0b10001,0b01110],
+  [0b00110,0b01000,0b10000,0b11110,0b10001,0b10001,0b01110],
+  [0b11111,0b00001,0b00010,0b00100,0b01000,0b01000,0b01000],
+  [0b01110,0b10001,0b10001,0b01110,0b10001,0b10001,0b01110],
+  [0b01110,0b10001,0b10001,0b01111,0b00001,0b00010,0b01100],
+];
+
+// ===================== Фреймбуфер и рендер грида =====================
+const gridEl = document.getElementById('grid');
+const cells = [];
+for (let r=0;r<8;r++){cells.push([]);for(let c=0;c<32;c++){const d=document.createElement('div');d.className='px';gridEl.appendChild(d);cells[r].push(d);}}
+let fb = Array.from({length:8},()=>Array(32).fill(false));
+
+function fbClear(){ fb = Array.from({length:8},()=>Array(32).fill(false)); }
+function fbDrawGlyph(glyph, xOffset){
+  if(!glyph) return;
+  for(let col=0; col<5; col++){
+    for(let row=0; row<7; row++){
+      const on = (glyph[row] >> (4-col)) & 1;
+      const x = xOffset+col;
+      if(x>=0 && x<32) fb[row][x] = !!on;
+    }
+  }
+}
+function fbDrawNumber(num, xOffset){
+  const s = String(num);
+  let x = xOffset;
+  for(const ch of s){ fbDrawGlyph(DIGITS[parseInt(ch)], x); x += 6; }
+  return x;
+}
+function renderGrid(){
+  for(let r=0;r<8;r++) for(let c=0;c<32;c++) cells[r][c].className = fb[r][c] ? 'px on' : 'px';
+}
+
+// ===================== Бегущая строка при "загрузке" =====================
+const BOOT_TEXT = "wellcum";
+let bootWide = [];
+let bootWidth = 0;
+(function buildBoot(){
+  let x = 0;
+  bootWide = Array.from({length:7},()=>[]);
+  for(const ch of BOOT_TEXT){
+    const g = FONT[ch.toUpperCase()];
+    if(g){
+      for(let col=0; col<5; col++) for(let row=0; row<7; row++) bootWide[row][x+col] = (g[row]>>(4-col))&1;
+      x += 6;
+    }
+  }
+  bootWidth = x;
+})();
+
+let bootOffset = -32;
+function bootStep(){
+  fbClear();
+  for(let col=0; col<32; col++){
+    const src = bootOffset + col;
+    if(src>=0 && src<bootWidth) for(let row=0;row<7;row++) fb[row][col] = !!bootWide[row][src];
+  }
+  renderGrid();
+  bootOffset++;
+  if(bootOffset > bootWidth){ clearInterval(bootTimer); startMainLoop(); }
+}
+const bootTimer = setInterval(bootStep, 80);
+
+// ===================== Основной цикл дисплея =====================
+function getCurrentMode(){
+  if(state.cruiseEngaged) return 'C';
+  if(state.pasCurrentLevel > 0) return 'P';
+  if(currentThrottlePct() > 5) return 'T';
+  return null;
+}
+
+function displayLoop(){
+  fbClear();
+  if(state.menuState === 'CRUISE_LEVEL'){
+    const pct = state.cruiseLevelPercent[state.cruiseSelectLevel-1] || 0;
+    fbDrawNumber(pct, 10);
+  } else {
+    const mode = getCurrentMode();
+    if(mode === 'P' || mode === 'C'){
+      fbDrawGlyph(FONT[mode], 1);
+      const pct = mode === 'P'
+        ? (state.pasLevelPercent[state.pasCurrentLevel-1] || 0)
+        : (state.cruiseLevelPercent[state.cruiseTargetLevel-1] || 0);
+      fbDrawNumber(pct, 8);
+    } else if(mode === 'T'){
+      fbDrawGlyph(FONT.T, 13);
+    }
+    if(state.turnLeftActive && state.turnBlinkState) fbDrawGlyph(ARROW_LEFT, 0);
+    if(state.turnRightActive && state.turnBlinkState) fbDrawGlyph(ARROW_RIGHT, 27);
+    if(state.brakeActive) for(let x=0;x<32;x++) fb[7][x] = true;
+  }
+
+  if(changeIndicator){
+    if(Date.now() < changeIndicator.until){
+      fbDrawGlyph(changeIndicator.dir === 'up' ? ARROW_UP : ARROW_DOWN, 27);
+    } else {
+      changeIndicator = null;
+    }
+  }
+
+  renderGrid();
+  dumpState();
+}
+
+function startMainLoop(){
+  setInterval(displayLoop, 100);
+  setInterval(()=>{ if(state.turnLeftActive || state.turnRightActive) state.turnBlinkState = !state.turnBlinkState; }, 500);
+}
+
+// ===================== Джойстик / меню =====================
+function onJoystick(dir){
+  if(state.menuState === 'IDLE'){
+    if(dir === 'ok'){
+      if(state.cruiseEngaged){
+        state.cruiseEngaged = false;
+        state.cruisePendingResume = false;
+      } else if(state.cruiseLevelsCount > 0){
+        state.cruiseSelectLevel = state.cruiseUseLastLevel ? state.cruiseTargetLevel : state.cruiseDefaultLevel;
+        state.cruiseSelectLevel = Math.min(Math.max(state.cruiseSelectLevel,1), state.cruiseLevelsCount);
+        state.menuState = 'CRUISE_LEVEL';
+      }
+    } else if(dir === 'up'){
+      if(state.pasCurrentLevel < state.pasLevelsCount){ state.pasCurrentLevel++; markChange('up'); }
+    } else if(dir === 'down'){
+      if(state.pasCurrentLevel > 0){ state.pasCurrentLevel--; markChange('down'); }
+    }
+  } else if(state.menuState === 'CRUISE_LEVEL'){
+    if(dir === 'up'){
+      if(state.cruiseSelectLevel < state.cruiseLevelsCount){ state.cruiseSelectLevel++; markChange('up'); }
+    } else if(dir === 'down'){
+      if(state.cruiseSelectLevel > 1){ state.cruiseSelectLevel--; markChange('down'); }
+    } else if(dir === 'ok'){
+      state.cruiseTargetLevel = state.cruiseSelectLevel;
+      state.cruiseEngaged = true;
+      state.cruisePendingResume = false;
+      state.menuState = 'IDLE';
+    } else if(dir === 'left'){
+      state.menuState = 'IDLE';
+    }
+  }
+}
+
+// ===================== Кнопки руля =====================
+function toggleHeadlight(){
+  state.headlightOn = !state.headlightOn;
+  document.getElementById('btnHeadlight').classList.toggle('active2', state.headlightOn);
+}
+function toggleTurnLeft(){
+  state.turnLeftActive = !state.turnLeftActive;
+  if(state.turnLeftActive) state.turnRightActive = false;
+  updateTurnButtons();
+}
+function toggleTurnRight(){
+  state.turnRightActive = !state.turnRightActive;
+  if(state.turnRightActive) state.turnLeftActive = false;
+  updateTurnButtons();
+}
+function updateTurnButtons(){
+  document.getElementById('btnTurnLeft').classList.toggle('active2', state.turnLeftActive);
+  document.getElementById('btnTurnRight').classList.toggle('active2', state.turnRightActive);
+}
+function setHorn(on){
+  state.hornActive = on;
+  document.getElementById('btnHorn').classList.toggle('active2', on);
+}
+function toggleBrake(){
+  state.brakeActive = !state.brakeActive;
+  document.getElementById('btnBrake').classList.toggle('active2', state.brakeActive);
+  if(state.brakeActive && state.cruiseEngaged){
+    state.cruiseEngaged = false;
+    if(state.cruiseResumeAfterBrake) state.cruisePendingResume = true;
+  }
+}
+document.getElementById('virtThrottle').addEventListener('input', function(){
+  state.virtualThrottleRaw = parseInt(this.value);
+  const pct = currentThrottlePct();
+  if(state.cruiseEngaged && state.cruiseCancelOnThrottle && pct > 10){
+    state.cruiseEngaged = false;
+  }
+  if(state.cruisePendingResume && !state.brakeActive && pct > 10){
+    state.cruiseEngaged = true;
+    state.cruisePendingResume = false;
+  }
+});
+
+function dumpState(){
+  const el = document.getElementById('stateDump');
+  el.innerHTML =
+    'Фара: ' + (state.headlightOn?'ВКЛ':'выкл') +
+    ' | ПАС уровень: ' + state.pasCurrentLevel + '/' + state.pasLevelsCount +
+    ' | Круиз: ' + (state.cruiseEngaged ? ('ВКЛ, ' + state.cruiseLevelPercent[state.cruiseTargetLevel-1] + '%') : 'выкл') +
+    (state.cruisePendingResume ? ' (ждёт восстановления)' : '') +
+    ' | Газ после калибровки: ' + currentThrottlePct() + '%' +
+    ' | Меню: ' + state.menuState;
+}
+
+// ===================== Настройка: Газ =====================
+function onCalibChange(){
+  state.throttleInMinPct = parseInt(document.getElementById('inMinSlider').value);
+  state.throttleInMaxPct = parseInt(document.getElementById('inMaxSlider').value);
+  state.throttleOutMinPct = parseInt(document.getElementById('outMinSlider').value);
+  state.throttleOutMaxPct = parseInt(document.getElementById('outMaxSlider').value);
+  document.getElementById('inMinVal').innerText = state.throttleInMinPct;
+  document.getElementById('inMaxVal').innerText = state.throttleInMaxPct;
+  document.getElementById('outMinVal').innerText = state.throttleOutMinPct;
+  document.getElementById('outMaxVal').innerText = state.throttleOutMaxPct;
+}
+function saveThrottle(){ alert('Сохранено (эмуляция, на реальной плате уйдёт в NVS)'); }
+
+// ===================== Настройка: PAS =====================
+function renderPasLevels(){
+  const count = parseInt(document.getElementById('pasCount').value) || 0;
+  state.pasLevelsCount = count;
+  const div = document.getElementById('pasLevels');
+  div.innerHTML = '';
+  for(let i=0;i<count;i++){
+    const val = state.pasLevelPercent[i] !== undefined ? state.pasLevelPercent[i] : 0;
+    div.innerHTML += '<label>Уровень '+(i+1)+' — усилие (0-100%)</label><input type="number" min="0" max="100" value="'+val+'" onchange="state.pasLevelPercent['+i+']=parseInt(this.value)">';
+  }
+}
+function autoDistributePas(){
+  const count = state.pasLevelsCount;
+  for(let i=0;i<count;i++) state.pasLevelPercent[i] = Math.round((i+1)*100/count);
+  renderPasLevels();
+}
+function savePas(){ alert('Сохранено (эмуляция)'); }
+renderPasLevels();
+
+// ===================== Настройка: Круиз =====================
+function renderCruiseLevels(){
+  const count = parseInt(document.getElementById('cruiseCount').value) || 0;
+  state.cruiseLevelsCount = count;
+  const div = document.getElementById('cruiseLevels');
+  div.innerHTML = '';
+  for(let i=0;i<count;i++){
+    const val = state.cruiseLevelPercent[i] !== undefined ? state.cruiseLevelPercent[i] : 0;
+    div.innerHTML += '<label>Уровень '+(i+1)+' — цель (0-100%)</label><input type="number" min="0" max="100" value="'+val+'" onchange="state.cruiseLevelPercent['+i+']=parseInt(this.value)">';
+  }
+}
+function autoDistributeCruise(){
+  const count = state.cruiseLevelsCount;
+  for(let i=0;i<count;i++) state.cruiseLevelPercent[i] = Math.round((i+1)*100/count);
+  renderCruiseLevels();
+}
+function saveCruise(){
+  state.cruiseUseLastLevel = document.getElementById('cruiseUseLast').checked;
+  state.cruiseDefaultLevel = parseInt(document.getElementById('cruiseDefLvl').value) || 1;
+  state.cruiseCancelOnThrottle = document.getElementById('cruiseCancelThr').checked;
+  state.cruiseResumeAfterBrake = document.getElementById('cruiseResumeBrk').checked;
+  alert('Сохранено (эмуляция)');
+}
+renderCruiseLevels();
+
+// ===================== КОНСТРУКТОР v2: роли + события =====================
+const ROLES = [
+  {id:'',               label:'— не используется —',            type:null},
+  {id:'throttle_in',    label:'Газ (вход)',                      type:'analog_in'},
+  {id:'throttle_out',   label:'Газ (выход, ЦАП)',                type:'dac_out'},
+  {id:'headlight_out',  label:'Фара (выход, ШИМ)',               type:'digital_out'},
+  {id:'drl_out',        label:'ДХО (выход, ШИМ)',                type:'digital_out'},
+  {id:'headlight_btn',  label:'Кнопка фары (вход)',              type:'digital_in'},
+  {id:'turn_left_btn',  label:'Кнопка поворот влево (вход)',     type:'digital_in'},
+  {id:'turn_right_btn', label:'Кнопка поворот вправо (вход)',    type:'digital_in'},
+  {id:'turn_left_out',  label:'Поворотник влево (выход)',        type:'digital_out'},
+  {id:'turn_right_out', label:'Поворотник вправо (выход)',       type:'digital_out'},
+  {id:'horn_btn',       label:'Кнопка гудка (вход, отжимная)',   type:'digital_in'},
+  {id:'horn_out',       label:'Гудок (выход)',                   type:'digital_out'},
+  {id:'buzzer_out',     label:'Пищалка (выход)',                 type:'digital_out'},
+  {id:'pas_sensor',     label:'Датчик PAS (вход)',                type:'digital_in'},
+  {id:'brake_sensor',   label:'Датчик тормоза (вход)',            type:'digital_in'},
+  {id:'rear_light_out', label:'Задний габарит (выход)',          type:'digital_out'},
+];
+
+const PINS = [
+  {num:2,  caps:['digital_in','digital_out'], warn:'strap'},
+  {num:4,  caps:['digital_in','digital_out']},
+  {num:5,  caps:['digital_in','digital_out'], warn:'strap'},
+  {num:12, caps:['digital_in','digital_out'], warn:'strap-critical'},
+  {num:13, caps:['digital_in','digital_out']},
+  {num:14, caps:['digital_in','digital_out'], warn:'adc2-wifi'},
+  {num:15, caps:['digital_in','digital_out'], warn:'strap'},
+  {num:16, caps:['digital_in','digital_out']},
+  {num:17, caps:['digital_in','digital_out']},
+  {num:18, caps:['digital_in','digital_out']},
+  {num:19, caps:['digital_in','digital_out']},
+  {num:21, caps:['digital_in','digital_out']},
+  {num:22, caps:['digital_in','digital_out']},
+  {num:23, caps:['digital_in','digital_out']},
+  {num:25, caps:['digital_in','digital_out','dac_out']},
+  {num:26, caps:['digital_in','digital_out','dac_out']},
+  {num:27, caps:['digital_in','digital_out']},
+  {num:32, caps:['digital_in','digital_out','analog_in']},
+  {num:33, caps:['digital_in','digital_out','analog_in']},
+  {num:34, caps:['digital_in','analog_in'], warn:'input-only'},
+  {num:35, caps:['digital_in','analog_in'], warn:'input-only'},
+];
+
+const TYPE_LABEL = {
+  analog_in: 'Аналоговый вход',
+  dac_out: 'Выход ЦАП',
+  digital_in: 'Цифровой вход',
+  digital_out: 'Цифровой выход',
+};
+
+let pinMap = {
+  throttle_in:34, throttle_out:25, headlight_out:18, drl_out:15,
+  headlight_btn:13, turn_left_btn:32, turn_right_btn:33,
+  turn_left_out:2, turn_right_out:4, horn_btn:5, horn_out:16,
+  buzzer_out:19, pas_sensor:14, brake_sensor:27, rear_light_out:17,
+};
+
+// Правила событий: для каждой кнопки — какие выходы включать/выключать вместе с ней
+let eventRules = {
+  headlight_btn: { on:['headlight_out'], off:['headlight_out'] },
+  turn_left_btn: { on:['turn_left_out','buzzer_out'], off:['turn_left_out','buzzer_out'] },
+  turn_right_btn:{ on:['turn_right_out','buzzer_out'], off:['turn_right_out','buzzer_out'] },
+};
+
+function warnBadge(warn){
+  const map = {
+    'strap':'<span class="badge warn">strap</span>',
+    'strap-critical':'<span class="badge crit">strap!</span>',
+    'adc2-wifi':'<span class="badge warn">ADC2/WiFi</span>',
+    'input-only':'<span class="badge warn">только IN</span>',
+  };
+  return warn ? (map[warn]||'') : '';
+}
+
+function pinCapBadges(pin){
+  return pin.caps.map(c=>{
+    const short = {analog_in:'аналог', dac_out:'ЦАП', digital_in:'цифр.вх', digital_out:'цифр.вых'}[c];
+    return '<span class="badge type">'+short+'</span>';
+  }).join('') + warnBadge(pin.warn);
+}
+
+function renderPinTable(){
+  const table = document.getElementById('pinTable');
+  let html = '<tr><th>Пин</th><th>Возможности</th><th>Роль</th></tr>';
+  PINS.forEach(pin=>{
+    const currentRole = Object.keys(pinMap).find(k=>pinMap[k]===pin.num) || '';
+    const options = ROLES.filter(r=>r.id==='' || r.type===null || pin.caps.includes(r.type) || r.id===currentRole)
+      .map(r=>'<option value="'+r.id+'"'+(r.id===currentRole?' selected':'')+'>'+r.label+'</option>').join('');
+    html += '<tr><td>GPIO'+pin.num+'</td><td>'+pinCapBadges(pin)+'</td><td><select onchange="onRoleChange('+pin.num+',this.value)">'+options+'</select></td></tr>';
+  });
+  table.innerHTML = html;
+}
+
+function onRoleChange(pinNum, roleId){
+  // снимаем эту роль с любого другого пина (роль уникальна)
+  Object.keys(pinMap).forEach(k=>{ if(pinMap[k]===pinNum) delete pinMap[k]; });
+  if(roleId) pinMap[roleId] = pinNum;
+  renderPinTable();
+  renderRules();
+}
+
+const BUTTON_ROLES = ['headlight_btn','turn_left_btn','turn_right_btn'];
+const OUTPUT_ROLES = ['headlight_out','drl_out','turn_left_out','turn_right_out','horn_out','buzzer_out','rear_light_out'];
+
+function renderRules(){
+  const area = document.getElementById('rulesArea');
+  area.innerHTML = '';
+  BUTTON_ROLES.forEach(btnId=>{
+    if(pinMap[btnId] == null) return; // показываем только назначенные кнопки
+    const roleLabel = ROLES.find(r=>r.id===btnId).label;
+    const rule = eventRules[btnId] || {on:[],off:[]};
+    const availableOutputs = OUTPUT_ROLES.filter(o=>pinMap[o] != null);
+    const block = document.createElement('div');
+    block.className = 'ruleBlock';
+    block.innerHTML = '<h4>'+roleLabel+' (GPIO'+pinMap[btnId]+')</h4><div class="ruleCols">' +
+      '<div class="ruleCol"><div class="colTitle">При включении</div>' +
+      availableOutputs.map(o=>'<label><input type="checkbox" data-btn="'+btnId+'" data-phase="on" data-out="'+o+'" '+(rule.on.includes(o)?'checked':'')+'>'+ROLES.find(r=>r.id===o).label+'</label>').join('') +
+      '</div><div class="ruleCol"><div class="colTitle">При выключении</div>' +
+      availableOutputs.map(o=>'<label><input type="checkbox" data-btn="'+btnId+'" data-phase="off" data-out="'+o+'" '+(rule.off.includes(o)?'checked':'')+'>'+ROLES.find(r=>r.id===o).label+'</label>').join('') +
+      '</div></div>';
+    area.appendChild(block);
+  });
+  if(pinMap['horn_btn'] != null){
+    const block = document.createElement('div');
+    block.className = 'ruleBlock';
+    block.innerHTML = '<h4>Кнопка гудка (GPIO'+pinMap['horn_btn']+')</h4><p class="hint" style="margin:0">Отжимная — поведение фиксированное: пока держишь, гудок включён; отпустил — выключен. Событий тут настраивать не нужно.</p>';
+    area.appendChild(block);
+  }
+  area.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.addEventListener('change', function(){
+      const btn = this.dataset.btn, phase = this.dataset.phase, out = this.dataset.out;
+      if(!eventRules[btn]) eventRules[btn] = {on:[],off:[]};
+      const arr = eventRules[btn][phase];
+      const idx = arr.indexOf(out);
+      if(this.checked && idx === -1) arr.push(out);
+      if(!this.checked && idx !== -1) arr.splice(idx,1);
+    });
+  });
+}
+
+function saveConstructor(){
+  alert('Сохранено (эмуляция). На реальной плате: запись пинов и правил событий в NVS + перезагрузка для применения.');
+}
+
+renderPinTable();
+renderRules();
+</script>
+</body>
+</html>

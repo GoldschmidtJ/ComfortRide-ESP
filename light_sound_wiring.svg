@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="720" viewBox="0 0 1000 720" font-family="Arial, sans-serif">
+  <rect width="1000" height="720" fill="#ffffff"/>
+  <text x="30" y="30" font-size="20" font-weight="bold">Свет и звук: коммутация MOSFET AOD418 (12В, передняя группа)</text>
+  <text x="30" y="52" font-size="12" fill="#888">Задний блок (48В?) — НЕ подключать, пока не подтверждено мультиметром. AOD418 держит максимум 30В.</text>
+
+  <!-- +12V rail -->
+  <line x1="60" y1="90" x2="940" y2="90" stroke="#c0392b" stroke-width="3"/>
+  <text x="20" y="95" font-size="16" font-weight="bold" fill="#c0392b">+12В</text>
+
+  <!-- GND rail -->
+  <line x1="60" y1="640" x2="940" y2="640" stroke="#2c3e50" stroke-width="3"/>
+  <text x="20" y="645" font-size="16" font-weight="bold" fill="#2c3e50">GND</text>
+
+  <!-- Шаблон одного канала, повторяем 5 раз -->
+  <!-- Канал 1: Фара -->
+  <g>
+    <text x="60" y="130" font-size="14" font-weight="bold">Фара (ШИМ)</text>
+    <line x1="90" y1="90" x2="90" y2="150" stroke="#c0392b" stroke-width="2"/>
+    <circle cx="90" cy="150" r="15" fill="#fff8e1" stroke="#333"/>
+    <text x="78" y="155" font-size="10">LED</text>
+    <line x1="90" y1="165" x2="90" y2="210" stroke="#333" stroke-width="2"/>
+    <polygon points="70,210 110,210 90,240" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+    <text x="60" y="255" font-size="10" fill="#27ae60">AOD418</text>
+    <line x1="90" y1="240" x2="90" y2="270" stroke="#333" stroke-width="2"/>
+    <text x="20" y="200" font-size="11">D (сток)</text>
+    <text x="20" y="230" font-size="11">G (затвор)</text>
+    <text x="20" y="265" font-size="11">S (исток)</text>
+    <line x1="90" y1="270" x2="90" y2="290" stroke="#2c3e50" stroke-width="2"/>
+    <line x1="55" y1="225" x2="20" y2="225" stroke="#8e44ad" stroke-width="2"/>
+    <text x="0" y="220" font-size="10" fill="#8e44ad">GPIO18</text>
+  </g>
+
+  <!-- Канал 2: ДХО -->
+  <g transform="translate(160,0)">
+    <text x="60" y="130" font-size="14" font-weight="bold">ДХО (ШИМ)</text>
+    <line x1="90" y1="90" x2="90" y2="150" stroke="#c0392b" stroke-width="2"/>
+    <circle cx="90" cy="150" r="15" fill="#fff8e1" stroke="#333"/>
+    <text x="78" y="155" font-size="10">LED</text>
+    <line x1="90" y1="165" x2="90" y2="210" stroke="#333" stroke-width="2"/>
+    <polygon points="70,210 110,210 90,240" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+    <text x="60" y="255" font-size="10" fill="#27ae60">AOD418</text>
+    <line x1="90" y1="240" x2="90" y2="270" stroke="#333" stroke-width="2"/>
+    <line x1="90" y1="270" x2="90" y2="290" stroke="#2c3e50" stroke-width="2"/>
+    <line x1="55" y1="225" x2="20" y2="225" stroke="#8e44ad" stroke-width="2"/>
+    <text x="0" y="220" font-size="10" fill="#8e44ad">GPIO19</text>
+  </g>
+
+  <!-- Канал 3: Поворотник левый -->
+  <g transform="translate(320,0)">
+    <text x="50" y="130" font-size="14" font-weight="bold">Поворот &larr;</text>
+    <line x1="90" y1="90" x2="90" y2="150" stroke="#c0392b" stroke-width="2"/>
+    <circle cx="90" cy="150" r="15" fill="#fff8e1" stroke="#333"/>
+    <text x="78" y="155" font-size="10">LED</text>
+    <line x1="90" y1="165" x2="90" y2="210" stroke="#333" stroke-width="2"/>
+    <polygon points="70,210 110,210 90,240" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+    <text x="60" y="255" font-size="10" fill="#27ae60">AOD418</text>
+    <line x1="90" y1="240" x2="90" y2="270" stroke="#333" stroke-width="2"/>
+    <line x1="90" y1="270" x2="90" y2="290" stroke="#2c3e50" stroke-width="2"/>
+    <line x1="55" y1="225" x2="20" y2="225" stroke="#8e44ad" stroke-width="2"/>
+    <text x="0" y="220" font-size="10" fill="#8e44ad">GPIO21</text>
+  </g>
+
+  <!-- Канал 4: Поворотник правый -->
+  <g transform="translate(480,0)">
+    <text x="45" y="130" font-size="14" font-weight="bold">Поворот &rarr;</text>
+    <line x1="90" y1="90" x2="90" y2="150" stroke="#c0392b" stroke-width="2"/>
+    <circle cx="90" cy="150" r="15" fill="#fff8e1" stroke="#333"/>
+    <text x="78" y="155" font-size="10">LED</text>
+    <line x1="90" y1="165" x2="90" y2="210" stroke="#333" stroke-width="2"/>
+    <polygon points="70,210 110,210 90,240" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+    <text x="60" y="255" font-size="10" fill="#27ae60">AOD418</text>
+    <line x1="90" y1="240" x2="90" y2="270" stroke="#333" stroke-width="2"/>
+    <line x1="90" y1="270" x2="90" y2="290" stroke="#2c3e50" stroke-width="2"/>
+    <line x1="55" y1="225" x2="20" y2="225" stroke="#8e44ad" stroke-width="2"/>
+    <text x="0" y="220" font-size="10" fill="#8e44ad">GPIO22</text>
+  </g>
+
+  <!-- Канал 5: Гудок -->
+  <g transform="translate(640,0)">
+    <text x="60" y="130" font-size="14" font-weight="bold">Гудок</text>
+    <line x1="90" y1="90" x2="90" y2="150" stroke="#c0392b" stroke-width="2"/>
+    <rect x="75" y="150" width="30" height="30" fill="#fdecea" stroke="#333"/>
+    <text x="78" y="170" font-size="9">BEEP</text>
+    <text x="60" y="195" font-size="9" fill="#c0392b">(проверь В!)</text>
+    <line x1="90" y1="180" x2="90" y2="210" stroke="#333" stroke-width="2"/>
+    <polygon points="70,210 110,210 90,240" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+    <text x="60" y="255" font-size="10" fill="#27ae60">AOD418</text>
+    <line x1="90" y1="240" x2="90" y2="270" stroke="#333" stroke-width="2"/>
+    <line x1="90" y1="270" x2="90" y2="290" stroke="#2c3e50" stroke-width="2"/>
+    <line x1="55" y1="225" x2="20" y2="225" stroke="#8e44ad" stroke-width="2"/>
+    <text x="0" y="220" font-size="10" fill="#8e44ad">GPIO23</text>
+  </g>
+
+  <!-- GND rail connections -->
+  <line x1="90" y1="290" x2="90" y2="640" stroke="#2c3e50" stroke-width="1"/>
+  <line x1="250" y1="290" x2="250" y2="640" stroke="#2c3e50" stroke-width="1"/>
+  <line x1="410" y1="290" x2="410" y2="640" stroke="#2c3e50" stroke-width="1"/>
+  <line x1="570" y1="290" x2="570" y2="640" stroke="#2c3e50" stroke-width="1"/>
+  <line x1="730" y1="290" x2="730" y2="640" stroke="#2c3e50" stroke-width="1"/>
+
+  <!-- Пищалка (тик) — отдельно, слабый ток, можно попроще -->
+  <g transform="translate(0,340)">
+    <text x="30" y="30" font-size="14" font-weight="bold" fill="#f39c12">Пищалка (тик поворотника) — слабый ток, тоже через AOD418 для единообразия</text>
+    <line x1="90" y1="50" x2="90" y2="80" stroke="#c0392b" stroke-width="2"/>
+    <rect x="75" y="80" width="30" height="25" fill="#fff8e1" stroke="#333"/>
+    <text x="78" y="97" font-size="9">buzz</text>
+    <line x1="90" y1="105" x2="90" y2="140" stroke="#333" stroke-width="2"/>
+    <polygon points="70,140 110,140 90,170" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+    <text x="60" y="185" font-size="10" fill="#27ae60">AOD418</text>
+    <line x1="90" y1="170" x2="90" y2="200" stroke="#333" stroke-width="2"/>
+    <line x1="90" y1="200" x2="90" y2="220" stroke="#2c3e50" stroke-width="2"/>
+    <line x1="55" y1="155" x2="20" y2="155" stroke="#8e44ad" stroke-width="2"/>
+    <text x="0" y="150" font-size="10" fill="#8e44ad">GPIO4</text>
+  </g>
+
+  <!-- Кнопки -->
+  <g transform="translate(300,340)">
+    <text x="0" y="30" font-size="14" font-weight="bold" fill="#f39c12">Кнопки руля (все одинаково: контакт -&gt; GND, контакт -&gt; GPIO с подтяжкой)</text>
+    <text x="0" y="55" font-size="12">Фара -&gt; GPIO16</text>
+    <text x="0" y="75" font-size="12">Поворот &larr; -&gt; GPIO17</text>
+    <text x="0" y="95" font-size="12">Поворот &rarr; -&gt; GPIO32</text>
+    <text x="0" y="115" font-size="12">Гудок (отжимная) -&gt; GPIO33</text>
+  </g>
+
+  <text x="30" y="700" font-size="12" fill="#555">Все AOD418: сток(D) к минусу нагрузки, исток(S) к GND, затвор(G) напрямую с GPIO ESP32 (логический уровень, доп. драйвер не нужен для таких токов).</text>
+</svg>

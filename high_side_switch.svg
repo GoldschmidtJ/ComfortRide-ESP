@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="560" viewBox="0 0 820 560" font-family="Arial, sans-serif">
+  <rect width="820" height="560" fill="#ffffff"/>
+
+  <!-- +12V rail -->
+  <line x1="60" y1="60" x2="700" y2="60" stroke="#c0392b" stroke-width="3"/>
+  <text x="20" y="65" font-size="18" fill="#c0392b" font-weight="bold">+12В</text>
+
+  <!-- GND rail -->
+  <line x1="60" y1="500" x2="700" y2="500" stroke="#2c3e50" stroke-width="3"/>
+  <text x="10" y="505" font-size="18" fill="#2c3e50" font-weight="bold">GND</text>
+
+  <!-- Pull-up resistor 10k -->
+  <line x1="250" y1="60" x2="250" y2="120" stroke="#333" stroke-width="2"/>
+  <rect x="230" y="120" width="40" height="60" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="278" y="155" font-size="16">10 кОм</text>
+  <line x1="250" y1="180" x2="250" y2="220" stroke="#333" stroke-width="2"/>
+
+  <!-- P-MOSFET box -->
+  <rect x="180" y="220" width="160" height="110" fill="#eaf2f8" stroke="#2980b9" stroke-width="2"/>
+  <text x="200" y="245" font-size="16" font-weight="bold" fill="#2980b9">P-MOSFET</text>
+  <text x="200" y="265" font-size="14" fill="#2980b9">(IRF9540)</text>
+
+  <!-- Source to +12V -->
+  <line x1="260" y1="60" x2="260" y2="220" stroke="#333" stroke-width="2"/>
+  <text x="270" y="90" font-size="14">S (исток)</text>
+
+  <!-- Gate line to node between resistor and NPN collector -->
+  <line x1="250" y1="220" x2="180" y2="275" stroke="#333" stroke-width="2"/>
+  <text x="90" y="270" font-size="14">G (затвор)</text>
+
+  <!-- Drain to load -->
+  <line x1="260" y1="330" x2="260" y2="400" stroke="#333" stroke-width="2"/>
+  <text x="270" y="360" font-size="14">D (сток)</text>
+
+  <!-- Load (headlight) -->
+  <circle cx="260" cy="420" r="20" fill="#fff8e1" stroke="#f39c12" stroke-width="2"/>
+  <text x="220" y="460" font-size="14" fill="#f39c12">Фара / ДХО</text>
+  <text x="215" y="478" font-size="13" fill="#f39c12">("плюс-фара" или "плюс-дхо")</text>
+  <line x1="260" y1="440" x2="260" y2="500" stroke="#333" stroke-width="2"/>
+  <text x="270" y="495" font-size="13">минус фары -&gt; сюда же, в общий GND</text>
+
+  <!-- NPN transistor -->
+  <circle cx="180" cy="320" r="35" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+  <text x="130" y="315" font-size="15" font-weight="bold" fill="#27ae60">NPN</text>
+  <text x="120" y="332" font-size="13" fill="#27ae60">(2N2222/BC547)</text>
+
+  <!-- Collector from gate node -->
+  <line x1="180" y1="275" x2="180" y2="285" stroke="#333" stroke-width="2"/>
+  <text x="185" y="290" font-size="13">к (коллектор)</text>
+
+  <!-- Emitter to GND -->
+  <line x1="180" y1="355" x2="180" y2="500" stroke="#333" stroke-width="2"/>
+  <text x="185" y="400" font-size="13">э (эмиттер)</text>
+
+  <!-- Base resistor 1k from Arduino pin -->
+  <line x1="60" y1="320" x2="110" y2="320" stroke="#333" stroke-width="2"/>
+  <rect x="60" y="300" width="50" height="40" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="55" y="360" font-size="14">1 кОм</text>
+  <text x="45" y="290" font-size="13">б (база)</text>
+
+  <!-- Arduino pin -->
+  <rect x="10" y="290" width="10" height="60" fill="#8e44ad"/>
+  <text x="-10" y="270" font-size="15" font-weight="bold" fill="#8e44ad">Arduino</text>
+  <text x="10" y="378" font-size="14" fill="#8e44ad">D10 (фара, ШИМ)</text>
+  <text x="10" y="396" font-size="14" fill="#8e44ad">или D9 (дхо, вкл/выкл)</text>
+
+  <!-- Notes -->
+  <text x="380" y="60" font-size="14" fill="#555">Питание фары: тот же источник, что и фара сейчас</text>
+  <text x="380" y="500" font-size="14" fill="#555">Минус Arduino ОБЯЗАТЕЛЬНО соединить с минусом 12В-источника</text>
+
+  <text x="60" y="30" font-size="20" font-weight="bold">Ключ верхнего плеча: 1 канал (повторить x2)</text>
+</svg>

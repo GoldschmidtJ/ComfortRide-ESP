@@ -1,0 +1,33 @@
+# Arduino / ESP32 build artifacts
+*.o
+*.a
+*.elf
+*.hex
+*.bin
+*.map
+*.lss
+*.sym
+*.bak
+*.orig
+*.swp
+*~
+build/
+debug/
+*.log
+
+# IDE specific files
+*.cbp
+*.depend
+*.layout
+.cproject
+.project
+.settings/
+*.user
+*.autosave
+
+# ESP32 specific
+partitions.csv
+bootloader/
+esp32/
+sdk/
+tools/

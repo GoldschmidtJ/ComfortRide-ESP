@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="760" viewBox="0 0 920 760" font-family="Arial, sans-serif">
+  <rect width="920" height="760" fill="#ffffff"/>
+  <text x="30" y="30" font-size="20" font-weight="bold">Схема подключения — версия без ОУ и без 12В (только то, что уже есть)</text>
+
+  <!-- ===================== ВХОД: делитель (без изменений) ===================== -->
+  <text x="30" y="65" font-size="16" font-weight="bold" fill="#2980b9">ВХОД ГАЗА: ручка -&gt; ESP32 GPIO34 (делитель, без изменений)</text>
+  <line x1="40" y1="90" x2="40" y2="90" stroke="#333"/>
+  <text x="10" y="90" font-size="13">Ручка газа</text>
+  <line x1="40" y1="100" x2="130" y2="100" stroke="#333" stroke-width="2"/>
+  <rect x="130" y="80" width="55" height="40" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="135" y="75" font-size="12">R1 10к</text>
+  <line x1="185" y1="100" x2="240" y2="100" stroke="#333" stroke-width="2"/>
+  <circle cx="240" cy="100" r="4" fill="#2980b9"/>
+  <line x1="240" y1="100" x2="320" y2="100" stroke="#2980b9" stroke-width="2"/>
+  <text x="325" y="105" font-size="13" fill="#2980b9">-&gt; GPIO34 (ADC)</text>
+  <line x1="240" y1="100" x2="240" y2="170" stroke="#333" stroke-width="2"/>
+  <rect x="220" y="170" width="40" height="55" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="265" y="200" font-size="12">R2 24к</text>
+  <line x1="240" y1="225" x2="240" y2="255" stroke="#333" stroke-width="2"/>
+  <text x="210" y="275" font-size="13">GND</text>
+
+  <!-- ===================== ВЫХОД: транзистор + RC ===================== -->
+  <text x="30" y="330" font-size="16" font-weight="bold" fill="#c0392b">ВЫХОД ГАЗА: ESP32 GPIO25 -&gt; транзистор+RC -&gt; вход контроллера (0-5В)</text>
+
+  <line x1="500" y1="360" x2="500" y2="390" stroke="#c0392b" stroke-width="2"/>
+  <text x="475" y="355" font-size="13" fill="#c0392b">+5В (та же шина, без 12В)</text>
+
+  <rect x="480" y="390" width="40" height="40" fill="none" stroke="#c0392b" stroke-width="2"/>
+  <text x="530" y="415" font-size="12" fill="#c0392b">R_pullup 4.7к</text>
+  <line x1="500" y1="430" x2="500" y2="470" stroke="#333" stroke-width="2"/>
+
+  <!-- узел OUT -->
+  <circle cx="500" cy="470" r="4" fill="#c0392b"/>
+  <line x1="500" y1="470" x2="640" y2="470" stroke="#c0392b" stroke-width="2"/>
+  <text x="645" y="465" font-size="13" fill="#c0392b">-&gt; вход газа контроллера</text>
+  <text x="645" y="483" font-size="13" fill="#c0392b">(0-5В, узел OUT)</text>
+
+  <!-- конденсатор на узле OUT -->
+  <line x1="500" y1="470" x2="500" y2="510" stroke="#333" stroke-width="2"/>
+  <text x="510" y="500" font-size="12">C 10мкФ</text>
+  <line x1="480" y1="510" x2="520" y2="510" stroke="#333" stroke-width="3"/>
+  <line x1="480" y1="518" x2="520" y2="518" stroke="#333" stroke-width="1"/>
+  <line x1="500" y1="518" x2="500" y2="550" stroke="#333" stroke-width="2"/>
+  <text x="470" y="570" font-size="13">GND</text>
+
+  <!-- транзистор NPN -->
+  <line x1="500" y1="470" x2="500" y2="470" stroke="#333"/>
+  <line x1="500" y1="470" x2="420" y2="530" stroke="#333" stroke-width="2"/>
+  <circle cx="400" cy="550" r="35" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+  <text x="365" y="545" font-size="13" font-weight="bold" fill="#27ae60">NPN</text>
+  <text x="360" y="562" font-size="11" fill="#27ae60">2N2222/BC547</text>
+  <text x="405" y="525" font-size="11">к (коллектор)</text>
+
+  <line x1="400" y1="585" x2="400" y2="650" stroke="#333" stroke-width="2"/>
+  <text x="405" y="640" font-size="11">э (эмиттер)</text>
+  <text x="380" y="670" font-size="13">GND</text>
+
+  <line x1="60" y1="550" x2="365" y2="550" stroke="#333" stroke-width="2"/>
+  <rect x="60" y="530" width="50" height="40" fill="none" stroke="#333" stroke-width="2"/>
+  <text x="55" y="590" font-size="12">R_base 1к</text>
+  <text x="380" y="570" font-size="11">б (база)</text>
+
+  <rect x="10" y="520" width="10" height="60" fill="#8e44ad"/>
+  <text x="-5" y="510" font-size="13" font-weight="bold" fill="#8e44ad">ESP32</text>
+  <text x="15" y="600" font-size="12" fill="#8e44ad">GPIO25 (ШИМ, 20кГц)</text>
+
+  <text x="330" y="700" font-size="12" fill="#888">Логика инвертирована: duty=255 (транзистор открыт) -&gt; узел на земле -&gt; 0В. duty=0 -&gt; узел на +5В через R_pullup -&gt; максимум. Прошивка это уже учитывает.</text>
+
+  <!-- ===================== PAS и тормоз — тап сигнала ===================== -->
+  <text x="30" y="735" font-size="14" font-weight="bold" fill="#f39c12">PAS и тормоз: +5В/GND остаются на контроллере как было! Только сигнальный провод разветвляется — вторая жила идёт на наш GPIO14 (PAS) / GPIO27 (тормоз). Отдельно питать их не нужно.</text>
+</svg>

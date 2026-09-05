@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="620" viewBox="0 0 1000 620" font-family="Arial, sans-serif">
+  <rect width="1000" height="620" fill="#ffffff"/>
+  <text x="30" y="35" font-size="22" font-weight="bold">Куда какой проводок газа (по-простому)</text>
+
+  <!-- РУЧКА ГАЗА -->
+  <rect x="30" y="80" width="180" height="100" fill="#eaf2f8" stroke="#2980b9" stroke-width="2" rx="8"/>
+  <text x="50" y="115" font-size="16" font-weight="bold" fill="#2980b9">РУЧКА ГАЗА</text>
+  <text x="50" y="140" font-size="13" fill="#2980b9">(3 провода ОТ неё)</text>
+
+  <!-- Red wire from grip -->
+  <line x1="210" y1="100" x2="960" y2="100" stroke="#c0392b" stroke-width="4"/>
+  <text x="230" y="93" font-size="14" font-weight="bold" fill="#c0392b">КРАСНЫЙ — просто напрямую на красный контроллера</text>
+
+  <!-- Black wire from grip -->
+  <line x1="210" y1="130" x2="500" y2="130" stroke="#333" stroke-width="4"/>
+  <line x1="500" y1="130" x2="500" y2="300" stroke="#333" stroke-width="4"/>
+  <text x="230" y="123" font-size="14" font-weight="bold" fill="#333">ЧЁРНЫЙ — вниз, на общий минус</text>
+
+  <!-- Signal wire from grip (third color) -->
+  <line x1="210" y1="160" x2="420" y2="160" stroke="#e6b800" stroke-width="4"/>
+  <text x="230" y="153" font-size="14" font-weight="bold" fill="#b38f00">СИГНАЛЬНЫЙ (3-й цвет) — идёт В плату, не напрямую к контроллеру!</text>
+
+  <!-- НАША ПЛАТА -->
+  <rect x="420" y="220" width="160" height="160" fill="#fdf2e9" stroke="#c0392b" stroke-width="2" rx="8"/>
+  <text x="440" y="250" font-size="16" font-weight="bold" fill="#c0392b">НАША ПЛАТА</text>
+  <text x="440" y="270" font-size="12" fill="#333">(ESP32 + ОУ)</text>
+  <text x="440" y="300" font-size="12" fill="#333">читает сигнал</text>
+  <text x="440" y="318" font-size="12" fill="#333">с ручки,</text>
+  <text x="440" y="336" font-size="12" fill="#333">САМА считает</text>
+  <text x="440" y="354" font-size="12" fill="#333">и выдаёт НОВЫЙ</text>
+  <text x="440" y="372" font-size="12" fill="#333">сигнал</text>
+
+  <!-- Signal in -->
+  <line x1="420" y1="160" x2="420" y2="220" stroke="#e6b800" stroke-width="4"/>
+  <text x="425" y="200" font-size="13" fill="#b38f00" font-weight="bold">ВХОД</text>
+
+  <!-- Signal out (new signal generated) -->
+  <line x1="580" y1="300" x2="700" y2="300" stroke="#27ae60" stroke-width="4"/>
+  <text x="600" y="290" font-size="13" fill="#27ae60" font-weight="bold">ВЫХОД (новый сигнал)</text>
+  <line x1="700" y1="300" x2="700" y2="200" stroke="#27ae60" stroke-width="4"/>
+  <line x1="700" y1="200" x2="960" y2="200" stroke="#27ae60" stroke-width="4"/>
+
+  <!-- Board GND -->
+  <line x1="500" y1="300" x2="500" y2="380" stroke="#333" stroke-width="4"/>
+  <text x="505" y="360" font-size="12" fill="#333">минус платы</text>
+  <text x="505" y="395" font-size="12" fill="#333">тоже сюда</text>
+
+  <!-- КОНТРОЛЛЕР -->
+  <rect x="960" y="80" width="0" height="0"/>
+  <rect x="960" y="150" width="10" height="10" fill="none"/>
+  <rect x="850" y="80" width="150" height="150" fill="#eafaf1" stroke="#27ae60" stroke-width="2" rx="8"/>
+  <text x="865" y="115" font-size="16" font-weight="bold" fill="#27ae60">КОНТРОЛЛЕР</text>
+  <text x="865" y="135" font-size="13" fill="#27ae60">(вход газа,</text>
+  <text x="865" y="153" font-size="13" fill="#27ae60">3 провода К нему)</text>
+
+  <!-- Black join point -->
+  <circle cx="500" cy="300" r="6" fill="#333"/>
+  <line x1="500" y1="300" x2="850" y2="300" stroke="#333" stroke-width="4"/>
+  <line x1="850" y1="300" x2="850" y2="230" stroke="#333" stroke-width="4"/>
+  <text x="700" y="320" font-size="14" font-weight="bold" fill="#333">ЧЁРНЫЙ (от контроллера) — тоже сюда, в ту же общую точку минуса</text>
+
+  <!-- Red into controller -->
+  <text x="880" y="95" font-size="12" fill="#c0392b"></text>
+
+  <!-- Legend box -->
+  <rect x="30" y="440" width="920" height="150" fill="#f8f8f8" stroke="#ccc" stroke-width="1" rx="6"/>
+  <text x="50" y="470" font-size="15" font-weight="bold">Итого 3 факта:</text>
+  <text x="50" y="495" font-size="14">1. КРАСНЫЙ ручки = КРАСНЫЙ контроллера. Соединяются НАПРЯМУЮ, минуя плату. Питание идёт как и раньше.</text>
+  <text x="50" y="520" font-size="14">2. ОБА чёрных (от ручки и от контроллера) + минус нашей платы — всё сходится в ОДНУ общую точку минуса.</text>
+  <text x="50" y="545" font-size="14">3. Сигнальный провод ручки заходит В плату (вход). Сигнальный провод контроллера выходит ИЗ платы (выход).</text>
+  <text x="50" y="570" font-size="14" fill="#c0392b" font-weight="bold">Эти два сигнальных провода НИКОГДА не соединяются друг с другом напрямую — только через плату!</text>
+</svg>
