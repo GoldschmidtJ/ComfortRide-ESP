@@ -15,6 +15,13 @@ build/
 debug/
 *.log
 
+# PlatformIO
+.pio
+.pioenvs
+.piolibdeps
+.clang_complete
+.gcc-flags.json
+
 # IDE specific files
 *.cbp
 *.depend
@@ -24,6 +31,7 @@ debug/
 .settings/
 *.user
 *.autosave
+.vscode/
 
 # ESP32 specific
 partitions.csv
@@ -31,3 +39,4 @@ bootloader/
 esp32/
 sdk/
 tools/
+
