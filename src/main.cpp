@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <WebServer.h>
 #include <Preferences.h>
 #include <Update.h>
@@ -9,6 +10,7 @@
 // ================= НАСТРОЙКА WiFi =================
 const char* ssid = "Donut";
 const char* password = "doughnut";
+const char* MDNS_HOST = "openbike";
 
 // ================= ПИНЫ (распаять сюда) =================
 // Газ: GND -> GND, +5В -> 5В, Сигнал -> GPIO34 (ВНИМАНИЕ: см. предупреждение по напряжению ниже)
@@ -57,6 +59,7 @@ String storedApPass = "";
 // Forward declarations
 void wifiCredsSave(const String &newSsid, const String &newPass);
 void wifiConnect();
+void updateWifiStateMachine();
 void setThrottleOutputSafeZero();
 void throttleSettingsSave();
 void throttleSettingsLoad();
@@ -102,13 +105,16 @@ void handleSystemStatus() {
   String wifiMode = "OFF";
   int rssi = 0;
   String ssidName = "";
+  String ipStr = "";
   if (WiFi.status() == WL_CONNECTED) {
     wifiMode = "STA";
     rssi = WiFi.RSSI();
     ssidName = WiFi.SSID();
+    ipStr = WiFi.localIP().toString();
   } else if ((WiFi.getMode() & WIFI_MODE_AP) != 0) {
     wifiMode = "AP";
     ssidName = storedApSsid;
+    ipStr = WiFi.softAPIP().toString();
   }
 
   String json = "{";
@@ -120,6 +126,8 @@ void handleSystemStatus() {
   json += "\"rom_total_kb\":" + String(ESP.getFlashChipSize() / 1024) + ","; // Added total flash size
   json += "\"wifi_mode\":\"" + wifiMode + "\",";
   json += "\"wifi_ssid\":\"" + ssidName + "\",";
+  json += "\"wifi_ip\":\"" + ipStr + "\",";
+  json += "\"mdns_host\":\"" + String(MDNS_HOST) + ".local\",";
   json += "\"wifi_rssi\":" + String(rssi) + ",";
   json += "\"pas_en\":" + String(pasEnabled ? "true" : "false") + ",";
   json += "\"pas_lvl\":" + String(pasCurrentLevel) + ",";
@@ -622,13 +630,16 @@ function updateSysStatus(){
       dot.className = "tb-dot ";
       if(d.wifi_mode === "STA"){
         dot.className += "dot-green";
-        txt.innerText = d.wifi_ssid || "STA";
+        let display = d.wifi_ssid || "WiFi";
+        if(d.wifi_ip) display += " (" + d.wifi_ip + ")";
+        txt.innerText = display;
+        txt.title = "Доступен по http://" + (d.mdns_host || "openbike.local") + " или http://" + (d.wifi_ip || "");
       } else if(d.wifi_mode === "AP"){
         dot.className += "dot-yellow";
-        txt.innerText = "AP: " + (d.wifi_ssid || "Bike");
+        txt.innerText = "AP: " + (d.wifi_ssid || "Bike") + " (" + (d.wifi_ip || "192.168.4.1") + ")";
       } else {
         dot.className += "dot-red";
-        txt.innerText = "Выкл";
+        txt.innerText = "Подключение...";
       }
     }
   }).catch(e=>{});
@@ -1001,7 +1012,7 @@ a.card:active{background:#444}
     <div class="btn-letter">P</div>
     <div class="btn-label">PAS Ассистент</div>
     <div class="btn-val" id="pasTxt">ВЫКЛ</div>
-    <div class="btn-hint">Клик: уровень | Удерж: вкл/выкл</div>
+    <div class="btn-hint">Клик: уровень 0 &rarr; 1 ... &rarr; N</div>
   </div>
 
   <div class="mode-btn" id="cruiseBtn">
@@ -1048,34 +1059,9 @@ function renderUI() {
   }
 }
 
-function attachButton(el, onClick, onLongPress) {
-  let timer = null;
-  let isLong = false;
-
-  function startPress(e) {
-    isLong = false;
-    timer = setTimeout(() => {
-      isLong = true;
-      if (onLongPress) onLongPress();
-      if (navigator.vibrate) navigator.vibrate(50);
-    }, 500);
-  }
-
-  function endPress(e) {
-    if (timer) clearTimeout(timer);
-    if (!isLong) {
-      onClick();
-    }
-  }
-
-  el.addEventListener("mousedown", startPress);
-  el.addEventListener("mouseup", endPress);
-  el.addEventListener("touchstart", (e) => { e.preventDefault(); startPress(e); }, {passive: false});
-  el.addEventListener("touchend", (e) => { e.preventDefault(); endPress(e); }, {passive: false});
-}
-
-attachButton(document.getElementById("pasBtn"), () => {
-  // Короткий клик: переключение уровня
+document.getElementById("pasBtn").addEventListener("click", () => {
+  if (navigator.vibrate) navigator.vibrate(40);
+  // Циклический выбор уровня: 0 -> 1 -> 2 -> ... -> N -> 0
   if (!pasEn || pasLvl === 0) {
     pasEn = true;
     pasLvl = 1;
@@ -1088,21 +1074,10 @@ attachButton(document.getElementById("pasBtn"), () => {
   }
   renderUI();
   fetch("/api/pas/set_level?level=" + pasLvl);
-}, () => {
-  // Долгое удержание: переключение вкл/выкл
-  pasEn = !pasEn;
-  if (!pasEn) pasLvl = 0;
-  else if (pasLvl === 0) pasLvl = 1;
-  renderUI();
-  fetch("/api/pas/toggle_mode");
 });
 
-attachButton(document.getElementById("cruiseBtn"), () => {
-  // Клик C: вкл/выкл круиз
-  cruiseEn = !cruiseEn;
-  renderUI();
-  fetch("/api/cruise/toggle");
-}, () => {
+document.getElementById("cruiseBtn").addEventListener("click", () => {
+  if (navigator.vibrate) navigator.vibrate(40);
   cruiseEn = !cruiseEn;
   renderUI();
   fetch("/api/cruise/toggle");
@@ -1433,6 +1408,9 @@ void handleUpdateResult() {
 // другую сеть — она сохранится в NVS и будет использоваться вместо дефолтной.
 String storedSsid = "";
 String storedPass = "";
+bool mdnsStarted = false;
+unsigned long wifiConnectStartMs = 0;
+bool wifiApActive = false;
 
 void wifiCredsLoad() {
   prefs.begin("wifi", true);
@@ -1468,9 +1446,45 @@ void wifiConnect() {
   String useSsid = storedSsid.length() > 0 ? storedSsid : String(ssid);
   String usePass = storedSsid.length() > 0 ? storedPass : String(password);
   WiFi.disconnect();
-  delay(100);
+  delay(50);
+  wifiConnectStartMs = millis();
   WiFi.begin(useSsid.c_str(), usePass.c_str());
   Serial.print("Подключение к "); Serial.println(useSsid);
+}
+
+// Автомат состояний WiFi:
+// 1. При успешном подключении к роутеру (STA) гасим точку доступа (AP) и поднимаем mDNS.
+// 2. Если связи с роутером нет, поднимаем аварийную точку доступа (AP).
+void updateWifiStateMachine() {
+  if (WiFi.status() == WL_CONNECTED) {
+    if (wifiApActive) {
+      WiFi.softAPdisconnect(true);
+      WiFi.mode(WIFI_STA);
+      wifiApActive = false;
+      Serial.print("WiFi подключен: "); Serial.println(WiFi.localIP());
+    }
+    if (!mdnsStarted) {
+      if (MDNS.begin(MDNS_HOST)) {
+        MDNS.addService("http", "tcp", 80);
+        mdnsStarted = true;
+        Serial.printf("mDNS запущен: http://%s.local\n", MDNS_HOST);
+      }
+    }
+  } else {
+    // Не подключены к STA
+    if (!wifiApActive) {
+      if (wifiConnectStartMs == 0) wifiConnectStartMs = millis();
+      // Если прошло больше 7 секунд попытки подключения к роутеру — поднимаем AP
+      if (millis() - wifiConnectStartMs > 7000) {
+        Serial.println("Роутер недоступен. Запуск точки доступа (AP)...");
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.softAP(storedApSsid.c_str(), storedApPass.c_str());
+        wifiApActive = true;
+        Serial.print("Точка доступа: "); Serial.println(storedApSsid);
+        Serial.print("IP адрес AP: "); Serial.println(WiFi.softAPIP());
+      }
+    }
+  }
 }
 
 void setup() {
@@ -1506,27 +1520,36 @@ void setup() {
 
   reattachPasInterrupt();
 
+  // Инициализация WiFi
   WiFi.mode(WIFI_STA);
   wifiCredsLoad();
+  wifiConnectStartMs = millis();
   wifiConnect();
+
   Serial.print("Подключение к WiFi");
   unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 8000) {
-    delay(300); Serial.print(".");
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 4000) {
+    delay(250); Serial.print(".");
   }
   Serial.println();
   if (WiFi.status() == WL_CONNECTED) {
+    WiFi.mode(WIFI_STA);
+    wifiApActive = false;
     Serial.print("Открой в браузере: http://"); Serial.println(WiFi.localIP());
+    if (MDNS.begin(MDNS_HOST)) {
+      MDNS.addService("http", "tcp", 80);
+      mdnsStarted = true;
+      Serial.printf("mDNS запущен: http://%s.local\n", MDNS_HOST);
+    }
   } else {
-    // WiFi не найден, переходим в режим точки доступа (AP)
+    // Если роутер сразу не ответил — поднимаем AP
     Serial.println("WiFi не найден. Запускаю режим точки доступа (AP).");
-    WiFi.mode(WIFI_AP);
+    WiFi.mode(WIFI_AP_STA);
     WiFi.softAP(storedApSsid.c_str(), storedApPass.c_str());
-
+    wifiApActive = true;
     IPAddress apIP = WiFi.softAPIP();
     Serial.print("Точка доступа: "); Serial.println(storedApSsid);
     Serial.print("IP адрес AP: "); Serial.println(apIP);
-    Serial.println("Подключитесь к этой сети, чтобы настроить Wi-Fi.");
   }
 
   cruiseSettingsLoad();
@@ -1562,6 +1585,7 @@ void loop() {
   unsigned long loopStart = micros();
   
   server.handleClient();
+  updateWifiStateMachine();
   updatePasDetection();
   updatePasButton();
   updateThrottle();

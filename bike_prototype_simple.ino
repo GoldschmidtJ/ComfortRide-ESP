@@ -2,110 +2,106 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <Update.h>
-#include <math.h>
+#include <MD_MAX72xx.h>
 
-// ================= НАСТРОЙКА WiFi =================
-const char* ssid = "Donut";
-const char* password = "doughnut";
+// WiFi Defaults
+const char* ssid = "Waffle";
+const char* password = "gotohell";
 
-// ================= ПИНЫ (распаять сюда) =================
-// Газ: GND -> GND, +5В -> 5В, Сигнал -> GPIO34 (ВНИМАНИЕ: см. предупреждение по напряжению ниже)
+// Pins
 const int THROTTLE_ADC_PIN = 34;
-// Выход газа на моторконтроллер — настоящий ЦАП ESP32 + усилитель на ОУ
-// (MCP6002, канал Б). ЦАП сам по себе уже даёт чистое напряжение 0-3.3В,
-// ОУ просто поднимает его до нужных 0-4.2В.
 const int THROTTLE_DAC_PIN = 25;
-// Тормоз: один провод -> GND, второй -> GPIO27
-const int BRAKE_PIN = 27;
-// PAS-датчик: GND -> GND, +5В -> 5В, Сигнал -> GPIO14
-const int PAS_SENSOR_PIN = 14;
-// Кнопка переключения уровня PAS: один контакт -> GND, второй -> GPIO13
-const int PAS_BUTTON_PIN = 13;
+const int BRAKE_PIN        = 27;
+const int PAS_SENSOR_PIN   = 14;
+const int PAS_BUTTON_PIN   = 13;
 
-// ================= СВЕТ / ЗВУК (передняя группа, 12В) =================
-// Все переключаются MOSFET AOD418 (низкая сторона — минус нагрузки на этот
-// пин, плюс нагрузки — на общую 12В-шину напрямую). Задний блок (48В,
-// неизвестной конструкции) пока НЕ трогаем — см. обсуждение в чате.
-const int HEADLIGHT_PIN   = 18; // фара, ШИМ
-const int DRL_PIN         = 19; // ДХО, ШИМ
-const int TURN_LEFT_PIN   = 21; // поворотник левый
-const int TURN_RIGHT_PIN  = 22; // поворотник правый
-const int HORN_PIN        = 23; // гудок
-const int BUZZER_PIN      = 4;  // пищалка (тик поворотника)
+#define DISP_CLK_PIN  16
+#define DISP_DATA_PIN 12
+#define DISP_CS_PIN   5
+#define MAX_DEVICES   8
 
-const int BTN_HEADLIGHT_PIN  = 16; // кнопка фары
-const int BTN_TURN_LEFT_PIN  = 17; // кнопка поворотник влево
-const int BTN_TURN_RIGHT_PIN = 32; // кнопка поворотник вправо
-const int BTN_HORN_PIN       = 33; // кнопка гудка (отжимная)
+MD_MAX72XX display = MD_MAX72XX(MD_MAX72XX::PAROLA_HW, DISP_DATA_PIN, DISP_CLK_PIN, DISP_CS_PIN, MAX_DEVICES);
 
-const int HEADLIGHT_DEFAULT_BRIGHTNESS = 220; // 0-255
-const int DRL_DEFAULT_BRIGHTNESS       = 60;  // 0-255, горит всегда
+const int JOY_VRX_PIN = 36;
+const int JOY_VRY_PIN = 39;
+const int JOY_SW_PIN  = 35;
 
-// Аппаратные пределы ESP32 — константы, не настройки. АЦП и ЦАП работают
-// в диапазоне 0-3.3В. Если ручка газа реально выдаёт больше (многие выдают
-// до 4.2В) — НАПРЯМУЮ подавать на ADC-пин нельзя, нужен делитель напряжения
-// (два резистора), иначе есть риск спалить пин.
 const float HW_MAX_VOLTAGE = 3.3f;
-
 WebServer server(80);
 Preferences prefs;
 
-// ================= ТОРМОЗ =================
+// Forward declarations
+void wifiCredsSave(const String &newSsid, const String &newPass);
+void wifiConnect();
+void setThrottleOutputSafeZero();
+void throttleSettingsSave();
+void throttleSettingsLoad();
+void pasSettingsSave();
+void pasSettingsLoad();
+void reattachPasInterrupt();
+
 bool isBrakePressed() { return digitalRead(BRAKE_PIN) == LOW; }
-bool ownBrakeCutoffEnabled = true; // дублировать отключение газа по тормозу (доп. к контроллеру)
+bool ownBrakeCutoffEnabled = true;
 
-// ================= ГАЗ: аппаратное согласование напряжений =================
-// У ESP32 АЦП/ЦАП работают 0-3.3В, а ручка газа/контроллер — обычно 0-4.2В.
-// На входе стоит резисторный делитель (понижает), на выходе — усилитель на
-// ОУ (повышает). Эти коэффициенты описывают ЧТО РЕАЛЬНО СТОИТ в железе —
-// дальше калибровка ниже работает уже в "настоящих" вольтах на проводах,
-// а не на ножках ESP32.
-float throttleInputDividerRatio = 20.0f / (10.0f + 20.0f); // R2/(R1+R2), R1=10к, R2=20к по умолчанию
-float throttleOutputGain = 1.0f + 3.3f / 10.0f; // 1 + R4/R3 (MCP6002, канал Б), R3=10к, R4=3.3к по умолчанию
+float throttleInputDividerRatio = 20.0f / 30.0f;
+float throttleOutputGain = 1.0f + 3.3f / 10.0f;
+float throttleInMinV = 0.8f, throttleInMaxV = 3.6f;
+float throttleOutMinV = 0.8f, throttleOutMaxV = 4.0f;
 
-// ================= ГАЗ: калибровка (в РЕАЛЬНЫХ вольтах на проводах) =================
-float throttleInMinV = 0.0f, throttleInMaxV = 4.2f;
-float throttleOutMinV = 0.0f, throttleOutMaxV = 4.2f;
-bool throttleExtendedRangeAllowed = false; // задел на будущее, сейчас ничего не меняет физически
+bool throttleSoftStartEnabled = false;
+bool throttleSoftStopEnabled = false;
+unsigned long throttleSoftStartMs = 500;
+unsigned long throttleSoftStopMs = 500;
+float throttleSmoothOutV = 0;
+unsigned long throttleSmoothLastMs = 0;
 
 float calibrateThrottleV(float rawV) {
   float inMin = throttleInMinV;
   float inMax = (throttleInMaxV > inMin + 0.01f) ? throttleInMaxV : (inMin + 0.01f);
   float outMin = throttleOutMinV;
   float outMax = (throttleOutMaxV > outMin + 0.01f) ? throttleOutMaxV : (outMin + 0.01f);
-  float clamped = rawV;
-  if (clamped < inMin) clamped = inMin;
-  if (clamped > inMax) clamped = inMax;
-  float norm = (clamped - inMin) / (inMax - inMin);
-  float outV = outMin + norm * (outMax - outMin);
-  return outV; // это ЦЕЛЕВОЕ напряжение на проводе к контроллеру, ещё не значение для ЦАП
+  if (rawV <= inMin) return outMin;
+  if (rawV >= inMax) return outMax;
+  return outMin + ((rawV - inMin) / (inMax - inMin)) * (outMax - outMin);
 }
 
-// ================= ГАЗ: мягкий старт / мягкий стоп (в вольтах) =================
-bool throttleSoftStartEnabled = false;
-bool throttleSoftStopEnabled = false;
-unsigned long throttleSoftStartMs = 500;
-unsigned long throttleSoftStopMs  = 500;
+float throttleAdcToGripV(int rawAdc) {
+  float vPin = ((float)rawAdc / 4095.0f) * HW_MAX_VOLTAGE;
+  float div = (throttleInputDividerRatio > 0.01f) ? throttleInputDividerRatio : 1.0f;
+  return vPin / div;
+}
 
-float throttleSmoothOutV = 0;
-unsigned long throttleSmoothLastMs = 0;
+uint8_t realVToDacValue(float desiredOutV) {
+  float gain = (throttleOutputGain > 0.01f) ? throttleOutputGain : 1.0f;
+  float vPin = desiredOutV / gain;
+  if (vPin < 0.0f) vPin = 0.0f;
+  if (vPin > HW_MAX_VOLTAGE) vPin = HW_MAX_VOLTAGE;
+  int dac = (int)round((vPin / HW_MAX_VOLTAGE) * 255.0f);
+  if (dac < 0) dac = 0;
+  if (dac > 255) dac = 255;
+  return (uint8_t)dac;
+}
 
 float applyThrottleSmoothing(float targetV) {
   unsigned long now = millis();
   unsigned long dt = now - throttleSmoothLastMs;
   if (dt == 0) dt = 1;
   throttleSmoothLastMs = now;
-
-  float diff = targetV - throttleSmoothOutV;
-  bool rising = diff > 0;
-  bool enabled = rising ? throttleSoftStartEnabled : throttleSoftStopEnabled;
-  unsigned long tau = rising ? throttleSoftStartMs : throttleSoftStopMs;
-
-  if (!enabled || tau == 0) { throttleSmoothOutV = targetV; return targetV; }
-
-  float alpha = 1.0f - expf(-(float)dt / (float)tau);
-  throttleSmoothOutV += diff * alpha;
-  if (fabs(targetV - throttleSmoothOutV) < 0.01f) throttleSmoothOutV = targetV;
+  float vRange = throttleOutMaxV - throttleOutMinV;
+  if (vRange < 0.1f) vRange = 0.1f;
+  if (targetV > throttleSmoothOutV) {
+    if (!throttleSoftStartEnabled || throttleSoftStartMs == 0) throttleSmoothOutV = targetV;
+    else {
+      throttleSmoothOutV += (vRange * (float)dt) / (float)throttleSoftStartMs;
+      if (throttleSmoothOutV > targetV) throttleSmoothOutV = targetV;
+    }
+  } else if (targetV < throttleSmoothOutV) {
+    if (!throttleSoftStopEnabled || throttleSoftStopMs == 0) throttleSmoothOutV = targetV;
+    else {
+      throttleSmoothOutV -= (vRange * (float)dt) / (float)throttleSoftStopMs;
+      if (throttleSmoothOutV < targetV) throttleSmoothOutV = targetV;
+    }
+  }
   return throttleSmoothOutV;
 }
 
@@ -117,7 +113,6 @@ void throttleSettingsSave() {
   prefs.putFloat("outMaxV", throttleOutMaxV);
   prefs.putFloat("divRatio", throttleInputDividerRatio);
   prefs.putFloat("gain", throttleOutputGain);
-  prefs.putInt("extRange", throttleExtendedRangeAllowed ? 1 : 0);
   prefs.putInt("ssEn", throttleSoftStartEnabled ? 1 : 0);
   prefs.putInt("spEn", throttleSoftStopEnabled ? 1 : 0);
   prefs.putULong("ssMs", throttleSoftStartMs);
@@ -128,13 +123,12 @@ void throttleSettingsSave() {
 
 void throttleSettingsLoad() {
   prefs.begin("throttle", true);
-  throttleInMinV = prefs.getFloat("inMinV", 0.0f);
-  throttleInMaxV = prefs.getFloat("inMaxV", 4.2f);
-  throttleOutMinV = prefs.getFloat("outMinV", 0.0f);
-  throttleOutMaxV = prefs.getFloat("outMaxV", 4.2f);
-  throttleInputDividerRatio = prefs.getFloat("divRatio", 24.0f / 34.0f);
-  throttleOutputGain = prefs.getFloat("gain", 1.27f);
-  throttleExtendedRangeAllowed = prefs.getInt("extRange", 0) != 0;
+  throttleInMinV = prefs.getFloat("inMinV", 0.8f);
+  throttleInMaxV = prefs.getFloat("inMaxV", 3.6f);
+  throttleOutMinV = prefs.getFloat("outMinV", 0.8f);
+  throttleOutMaxV = prefs.getFloat("outMaxV", 4.0f);
+  throttleInputDividerRatio = prefs.getFloat("divRatio", 20.0f / 30.0f);
+  throttleOutputGain = prefs.getFloat("gain", 1.33f);
   throttleSoftStartEnabled = prefs.getInt("ssEn", 0) != 0;
   throttleSoftStopEnabled = prefs.getInt("spEn", 0) != 0;
   throttleSoftStartMs = prefs.getULong("ssMs", 500);
@@ -160,7 +154,7 @@ void IRAM_ATTR onPasPulse() {
 
 int pasRequiredPulses() {
   int required = (int)round(pasActivationAngle * pasMagnetCount / 360.0f);
-  if (required < 1) required = 1; // без max() — раньше тут была ошибка компиляции из-за смешения типов
+  if (required < 1) required = 1;
   return required;
 }
 
@@ -184,7 +178,7 @@ void reattachPasInterrupt() {
 const int PAS_MAX_LEVELS = 20;
 int pasLevelsCount = 3;
 int pasLevelPercent[PAS_MAX_LEVELS];
-int pasCurrentLevel = 0; // 0 = выключен (edge case "PAS 0 = 0%" — заложено по умолчанию)
+int pasCurrentLevel = 0;
 
 void pasAutoDistribute() {
   for (int i = 0; i < pasLevelsCount; i++) {
@@ -221,9 +215,10 @@ float applyPasSmoothing(float targetV) {
 }
 
 float getPasTargetV() {
-  if (pasCurrentLevel <= 0 || pasCurrentLevel > pasLevelsCount) return 0;
-  if (!pasConfirmedActive) return 0;
-  return (pasLevelPercent[pasCurrentLevel - 1] / 100.0f) * throttleOutMaxV;
+  if (pasCurrentLevel <= 0 || pasCurrentLevel > pasLevelsCount) return 0.0f;
+  if (!pasConfirmedActive) return 0.0f;
+  float vRange = throttleOutMaxV - throttleOutMinV;
+  return throttleOutMinV + (vRange * (float)pasLevelPercent[pasCurrentLevel - 1] / 100.0f);
 }
 
 void pasSettingsSave() {
@@ -234,6 +229,7 @@ void pasSettingsSave() {
   prefs.putULong("timeout", pasTimeoutMs);
   prefs.putInt("cnt", pasLevelsCount);
   prefs.putBytes("pct", pasLevelPercent, sizeof(pasLevelPercent));
+  prefs.putInt("curLvl", pasCurrentLevel);
   prefs.putInt("ssEn", pasSoftStartEnabled ? 1 : 0);
   prefs.putInt("spEn", pasSoftStopEnabled ? 1 : 0);
   prefs.putULong("ssMs", pasSoftStartMs);
@@ -249,6 +245,7 @@ void pasSettingsLoad() {
   pasTimeoutMs = prefs.getULong("timeout", 350);
   pasLevelsCount = prefs.getInt("cnt", 3);
   size_t got = prefs.getBytes("pct", pasLevelPercent, sizeof(pasLevelPercent));
+  pasCurrentLevel = prefs.getInt("curLvl", 0);
   pasSoftStartEnabled = prefs.getInt("ssEn", 0) != 0;
   pasSoftStopEnabled = prefs.getInt("spEn", 0) != 0;
   pasSoftStartMs = prefs.getULong("ssMs", 500);
@@ -259,190 +256,149 @@ void pasSettingsLoad() {
   }
 }
 
-// ================= Кнопка переключения уровня PAS =================
-int btnLastReading = HIGH, btnStable = HIGH;
-unsigned long btnLastDebounce = 0;
-const unsigned long DEBOUNCE_MS = 50;
+int pasButtonLastReading = HIGH;
+int pasButtonStableState = HIGH;
+unsigned long pasButtonDebounceMs = 0;
 
 void updatePasButton() {
   int reading = digitalRead(PAS_BUTTON_PIN);
-  if (reading != btnLastReading) btnLastDebounce = millis();
-  if (millis() - btnLastDebounce > DEBOUNCE_MS) {
-    if (reading != btnStable) {
-      btnStable = reading;
-      if (btnStable == LOW) {
-        pasCurrentLevel = (pasCurrentLevel + 1) % (pasLevelsCount + 1);
-        Serial.printf("PAS уровень: %d/%d\n", pasCurrentLevel, pasLevelsCount);
+  if (reading != pasButtonLastReading) pasButtonDebounceMs = millis();
+  if (millis() - pasButtonDebounceMs > 50) {
+    if (reading != pasButtonStableState) {
+      pasButtonStableState = reading;
+      if (pasButtonStableState == LOW) {
+        pasCurrentLevel++;
+        if (pasCurrentLevel > pasLevelsCount) pasCurrentLevel = 0;
+        prefs.begin("pas", false);
+        prefs.putInt("curLvl", pasCurrentLevel);
+        prefs.end();
       }
     }
   }
-  btnLastReading = reading;
+  pasButtonLastReading = reading;
 }
 
-// ================= Свет: фара, ДХО =================
-bool headlightOn = false;
-
-void toggleHeadlight() {
-  headlightOn = !headlightOn;
-  ledcWrite(HEADLIGHT_PIN, headlightOn ? HEADLIGHT_DEFAULT_BRIGHTNESS : 0);
-  Serial.println(headlightOn ? "Фара: ВКЛ" : "Фара: ВЫКЛ");
+void setThrottleOutputSafeZero() {
+  dacWrite(THROTTLE_DAC_PIN, realVToDacValue(throttleOutMinV));
 }
-
-// ================= Пищалка (тик поворотника) =================
-bool buzzerOn = false;
-unsigned long buzzerOffAtMs = 0;
-
-void buzzerClick(unsigned long durationMs) {
-  digitalWrite(BUZZER_PIN, HIGH);
-  buzzerOn = true;
-  buzzerOffAtMs = millis() + durationMs;
-}
-
-void updateBuzzer() {
-  if (buzzerOn && millis() >= buzzerOffAtMs) {
-    digitalWrite(BUZZER_PIN, LOW);
-    buzzerOn = false;
-  }
-}
-
-// ================= Поворотники =================
-bool turnLeftActive = false, turnRightActive = false;
-unsigned long turnLastBlinkMs = 0;
-bool turnBlinkState = false;
-const unsigned long TURN_BLINK_MS = 500;
-
-void toggleTurnLeft() {
-  turnLeftActive = !turnLeftActive;
-  if (turnLeftActive) turnRightActive = false;
-}
-void toggleTurnRight() {
-  turnRightActive = !turnRightActive;
-  if (turnRightActive) turnLeftActive = false;
-}
-
-void updateTurnSignals() {
-  if (!turnLeftActive && !turnRightActive) {
-    digitalWrite(TURN_LEFT_PIN, LOW);
-    digitalWrite(TURN_RIGHT_PIN, LOW);
-    return;
-  }
-  if (millis() - turnLastBlinkMs >= TURN_BLINK_MS) {
-    turnLastBlinkMs = millis();
-    turnBlinkState = !turnBlinkState;
-    buzzerClick(50); // тик на каждой смене состояния мигания
-  }
-  digitalWrite(TURN_LEFT_PIN,  (turnLeftActive  && turnBlinkState) ? HIGH : LOW);
-  digitalWrite(TURN_RIGHT_PIN, (turnRightActive && turnBlinkState) ? HIGH : LOW);
-}
-
-// ================= Гудок =================
-void updateHorn() {
-  bool hornPressed = (digitalRead(BTN_HORN_PIN) == LOW);
-  digitalWrite(HORN_PIN, hornPressed ? HIGH : LOW);
-}
-
-// ================= Физические кнопки: фара, поворотники (дебаунс) =================
-struct DebouncedButton {
-  int pin; int lastReading; int stableState; unsigned long lastDebounceMs; void (*action)();
-};
-
-DebouncedButton lightButtons[] = {
-  { BTN_HEADLIGHT_PIN,  HIGH, HIGH, 0, toggleHeadlight },
-  { BTN_TURN_LEFT_PIN,  HIGH, HIGH, 0, toggleTurnLeft },
-  { BTN_TURN_RIGHT_PIN, HIGH, HIGH, 0, toggleTurnRight },
-};
-const int lightButtonsCount = sizeof(lightButtons) / sizeof(lightButtons[0]);
-
-void updateLightButtons() {
-  for (int i = 0; i < lightButtonsCount; i++) {
-    DebouncedButton &b = lightButtons[i];
-    int reading = digitalRead(b.pin);
-    if (reading != b.lastReading) b.lastDebounceMs = millis();
-    if (millis() - b.lastDebounceMs > DEBOUNCE_MS) {
-      if (reading != b.stableState) {
-        b.stableState = reading;
-        if (b.stableState == LOW) b.action();
-      }
-    }
-    b.lastReading = reading;
-  }
-}
-
-// ================= Отладочный буфер (для графиков в браузере) =================
-// Копим последние несколько секунд значений — газ вход/выход, тормоз, PAS.
-// Страница /debug рисует это как бегущий график, вроде мини-осциллографа.
-const int DEBUG_BUFFER_SIZE = 200; // при семпле раз в 20мс — это ~4 секунды истории
 
 struct DebugSample {
-  unsigned long tMs;
-  float throttleInV;
-  float throttleOutV;
-  bool brake;
-  bool pasActive;
-  int pasLevel;
+  unsigned long t;
+  float throttleInV, throttleOutV;
+  bool brake, pasActive;
+  int pasLevel, joyX, joyY;
+  bool joySw;
 };
 
-DebugSample debugBuffer[DEBUG_BUFFER_SIZE];
-int debugBufferHead = 0;
-unsigned long lastDebugSampleMs = 0;
-const unsigned long DEBUG_SAMPLE_INTERVAL_MS = 20;
+const int DEBUG_BUFFER_SIZE = 100;
+DebugSample debugBuf[DEBUG_BUFFER_SIZE];
+int debugBufHead = 0;
 
-void updateDebugBuffer(float throttleInV, float throttleOutV) {
-  unsigned long now = millis();
-  if (now - lastDebugSampleMs < DEBUG_SAMPLE_INTERVAL_MS) return;
-  lastDebugSampleMs = now;
-
-  DebugSample &s = debugBuffer[debugBufferHead];
-  s.tMs = now;
-  s.throttleInV = throttleInV;
-  s.throttleOutV = throttleOutV;
+void debugRecord(float inV, float outV, int jx, int jy, bool jsw) {
+  DebugSample &s = debugBuf[debugBufHead];
+  s.t = millis();
+  s.throttleInV = inV;
+  s.throttleOutV = outV;
   s.brake = isBrakePressed();
   s.pasActive = pasConfirmedActive;
   s.pasLevel = pasCurrentLevel;
-  debugBufferHead = (debugBufferHead + 1) % DEBUG_BUFFER_SIZE;
-}
-
-// ================= Throttle-by-wire =================
-void setThrottleOutputSafeZero() {
-  dacWrite(THROTTLE_DAC_PIN, 0);
+  s.joyX = jx;
+  s.joyY = jy;
+  s.joySw = jsw;
+  debugBufHead = (debugBufHead + 1) % DEBUG_BUFFER_SIZE;
 }
 
 void updateThrottle() {
+  int joyX = analogRead(JOY_VRX_PIN);
+  int joyY = analogRead(JOY_VRY_PIN);
+  bool joySw = (digitalRead(JOY_SW_PIN) == LOW);
   if (ownBrakeCutoffEnabled && isBrakePressed()) {
     setThrottleOutputSafeZero();
     throttleSmoothOutV = 0;
     pasSmoothOutV = 0;
-    updateDebugBuffer(0, 0);
+    debugRecord(0, throttleOutMinV, joyX, joyY, joySw);
     return;
   }
-
-  int raw = analogRead(THROTTLE_ADC_PIN);
-  float adcPinV = raw * HW_MAX_VOLTAGE / 4095.0f;
-  // На ножке ESP32 напряжение уже ослаблено делителем — пересчитываем
-  // обратно в реальное напряжение на проводе ручки газа.
-  float realGripV = adcPinV / throttleInputDividerRatio;
-
-  float throttleTargetV = calibrateThrottleV(realGripV); // целевое напряжение на проводе К КОНТРОЛЛЕРУ
-  float throttleOutV = applyThrottleSmoothing(throttleTargetV);
-
-  float pasTargetV = getPasTargetV();
-  float pasOutV = applyPasSmoothing(pasTargetV);
-
-  float combinedV = (throttleOutV > pasOutV) ? throttleOutV : pasOutV; // целевое реальное напряжение на выходе
-  // ОУ (канал Б) поднимает напряжение в throttleOutputGain раз — значит на
-  // сам ЦАП нужно подать МЕНЬШЕ, чтобы после усиления получить цель.
-  float dacTargetV = combinedV / throttleOutputGain;
-  if (dacTargetV > HW_MAX_VOLTAGE) dacTargetV = HW_MAX_VOLTAGE; // физический предел ЦАП — не обойти
-  if (dacTargetV < 0) dacTargetV = 0;
-  int dacVal = (int)round(dacTargetV / HW_MAX_VOLTAGE * 255.0f);
-  if (dacVal < 0) dacVal = 0;
-  if (dacVal > 255) dacVal = 255;
-  dacWrite(THROTTLE_DAC_PIN, dacVal);
-
-  updateDebugBuffer(realGripV, combinedV);
+  float realGripV = throttleAdcToGripV(analogRead(THROTTLE_ADC_PIN));
+  float throttleOutV = applyThrottleSmoothing(calibrateThrottleV(realGripV));
+  float pasOutV = applyPasSmoothing(getPasTargetV());
+  float combinedV = (throttleOutV > pasOutV) ? throttleOutV : pasOutV;
+  dacWrite(THROTTLE_DAC_PIN, realVToDacValue(combinedV));
+  debugRecord(realGripV, combinedV, joyX, joyY, joySw);
 }
 
-// ================= Веб: отладочный график =================
+unsigned long lastDisplayUpdateMs = 0;
+void updateDisplay() {
+  if (millis() - lastDisplayUpdateMs < 100) return;
+  lastDisplayUpdateMs = millis();
+  display.clear();
+  if (isBrakePressed()) {
+    display.setChar(0, 'S');
+    display.setChar(1, 'T');
+    display.setChar(2, 'O');
+    display.setChar(3, 'P');
+  } else {
+    display.setChar(0, 'P');
+    display.setChar(1, '0' + pasCurrentLevel);
+  }
+}
+
+String storedSsid = "", storedPass = "";
+void wifiCredsLoad() {
+  prefs.begin("wifi", true);
+  storedSsid = prefs.getString("ssid", "");
+  storedPass = prefs.getString("pass", "");
+  prefs.end();
+}
+
+void wifiCredsSave(const String &newSsid, const String &newPass) {
+  prefs.begin("wifi", false);
+  prefs.putString("ssid", newSsid);
+  prefs.putString("pass", newPass);
+  prefs.end();
+  storedSsid = newSsid;
+  storedPass = newPass;
+}
+
+void wifiConnect() {
+  String useSsid = storedSsid.length() > 0 ? storedSsid : String(ssid);
+  String usePass = storedSsid.length() > 0 ? storedPass : String(password);
+  WiFi.disconnect();
+  delay(100);
+  WiFi.begin(useSsid.c_str(), usePass.c_str());
+}
+
+void handleDebugData() {
+  String json = "[";
+  for (int i = 0; i < DEBUG_BUFFER_SIZE; i++) {
+    int idx = (debugBufHead + i) % DEBUG_BUFFER_SIZE;
+    DebugSample &s = debugBuf[idx];
+    if (s.t == 0) continue;
+    if (json.length() > 1) json += ",";
+    json += "{\"t\":";
+    json += String(s.t);
+    json += ",\"in\":";
+    json += String(s.throttleInV, 2);
+    json += ",\"out\":";
+    json += String(s.throttleOutV, 2);
+    json += ",\"brake\":";
+    json += (s.brake ? "1" : "0");
+    json += ",\"pas\":";
+    json += (s.pasActive ? "1" : "0");
+    json += ",\"lvl\":";
+    json += String(s.pasLevel);
+    json += ",\"jx\":";
+    json += String(s.joyX);
+    json += ",\"jy\":";
+    json += String(s.joyY);
+    json += ",\"jsw\":";
+    json += (s.joySw ? "1" : "0");
+    json += "}";
+  }
+  json += "]";
+  server.send(200, "application/json", json);
+}
+
 void handleDebugPage() {
   server.send(200, "text/html", R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
@@ -472,13 +428,12 @@ a{color:#4a90d9}
 const canvas = document.getElementById('chart');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
-const VMAX = 5.0; // шкала по напряжению, В
+const VMAX = 5.0;
 
 function draw(data) {
   ctx.clearRect(0,0,W,H);
   if (data.length < 2) return;
 
-  // сетка
   ctx.strokeStyle = '#222';
   ctx.lineWidth = 1;
   for (let v = 0; v <= VMAX; v++) {
@@ -534,106 +489,6 @@ refresh();
 )rawliteral");
 }
 
-void handleDebugData() {
-  String json = "[";
-  for (int i = 0; i < DEBUG_BUFFER_SIZE; i++) {
-    int idx = (debugBufferHead + i) % DEBUG_BUFFER_SIZE;
-    DebugSample &s = debugBuffer[idx];
-    if (i > 0) json += ",";
-    json += "{\"t\":" + String(s.tMs) +
-            ",\"in\":" + String(s.throttleInV, 2) +
-            ",\"out\":" + String(s.throttleOutV, 2) +
-            ",\"brake\":" + (s.brake ? "1" : "0") +
-            ",\"pas\":" + (s.pasActive ? "1" : "0") +
-            ",\"lvl\":" + String(s.pasLevel) + "}";
-  }
-  json += "]";
-  server.send(200, "application/json", json);
-}
-
-// ================= Веб: WiFi (поиск и подключение) =================
-void handleWifiPage() {
-  String html = R"rawliteral(
-<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WiFi</title>
-<style>
-body{background:#111;color:#eee;font-family:sans-serif;padding:15px;max-width:400px;margin:auto}
-button{padding:10px;width:100%;font-size:15px;border-radius:8px;border:none;background:#333;color:#eee;margin-top:10px}
-input{width:100%;padding:8px;box-sizing:border-box;background:#222;color:#eee;border:1px solid #444;margin-top:8px}
-.net{padding:10px;background:#1a1a1a;border-radius:6px;margin-top:6px;cursor:pointer;display:flex;justify-content:space-between}
-.net:active{background:#333}
-a{color:#4a90d9}
-.status{color:#888;font-size:13px;margin:10px 0}
-</style></head><body>
-<p><a href="/">&larr; Настройки</a></p>
-<h1>WiFi</h1>
-<div class="status" id="status">Сейчас: )rawliteral";
-  html += (WiFi.status() == WL_CONNECTED) ? ("подключено к " + WiFi.SSID() + ", IP " + WiFi.localIP().toString()) : "не подключено";
-  html += R"rawliteral(</div>
-
-<button onclick="scan()">Найти сети</button>
-<div id="nets"></div>
-
-<form id="f" style="margin-top:20px">
-<label>SSID</label><input type="text" id="ssid" name="ssid" value="">
-<label>Пароль</label><input type="password" id="pass" name="pass" value="">
-<button type="submit">Подключиться и сохранить</button>
-</form>
-
-<script>
-function scan() {
-  document.getElementById('nets').innerHTML = 'Ищу...';
-  fetch('/wifi/scan').then(r=>r.json()).then(list=>{
-    if (!list.length) { document.getElementById('nets').innerHTML = 'Ничего не нашлось'; return; }
-    document.getElementById('nets').innerHTML = list.map(n =>
-      '<div class="net" onclick="pick(\''+n.ssid.replace(/'/g,"")+'\')"><span>'+n.ssid+'</span><span>'+n.rssi+' dBm</span></div>'
-    ).join('');
-  });
-}
-function pick(ssid) {
-  document.getElementById('ssid').value = ssid;
-  document.getElementById('pass').focus();
-}
-document.getElementById('f').addEventListener('submit', function(e){
-  e.preventDefault();
-  const d = new FormData(this);
-  document.getElementById('status').innerText = 'Подключаюсь...';
-  fetch('/wifi/save', {method:'POST', body:d}).then(()=>{
-    setTimeout(()=>location.reload(), 4000);
-  });
-});
-</script>
-</body></html>
-)rawliteral";
-  server.send(200, "text/html", html);
-}
-
-void handleWifiScan() {
-  int n = WiFi.scanNetworks();
-  String json = "[";
-  for (int i = 0; i < n; i++) {
-    if (i > 0) json += ",";
-    String s = WiFi.SSID(i);
-    s.replace("\"", "");
-    json += "{\"ssid\":\"" + s + "\",\"rssi\":" + String(WiFi.RSSI(i)) + "}";
-  }
-  json += "]";
-  WiFi.scanDelete();
-  server.send(200, "application/json", json);
-}
-
-void handleWifiSave() {
-  String newSsid = server.arg("ssid");
-  String newPass = server.arg("pass");
-  if (newSsid.length() > 0) {
-    wifiCredsSave(newSsid, newPass);
-    wifiConnect();
-  }
-  server.send(200, "text/plain", "OK");
-}
-
-// ================= Веб: хаб =================
 void handleHub() {
   server.send(200, "text/html", R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
@@ -641,7 +496,8 @@ void handleHub() {
 <title>Настройки</title>
 <style>body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#111;color:#eee}
 a.card{display:block;background:#333;color:#fff;padding:15px;border-radius:8px;margin-bottom:10px;text-decoration:none}
-.warn{background:#5c1a1a;padding:12px;border-radius:8px;margin-bottom:20px;font-weight:bold}</style>
+.warn{background:#5c1a1a;padding:12px;border-radius:8px;margin-bottom:20px;font-weight:bold;font-size:14px}
+</style>
 </head><body>
 <h1>Упрощённый прототип</h1>
 <div class="warn">&#9888; Тормоз продублирован сюда как приоритет 0 (можно отключить в настройках газа).</div>
@@ -654,7 +510,6 @@ a.card{display:block;background:#333;color:#fff;padding:15px;border-radius:8px;m
 )rawliteral");
 }
 
-// ================= Веб: Газ =================
 void handleThrottlePage() {
   String html = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
@@ -684,10 +539,10 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
 <fieldset><legend>Согласующие цепи (подстроить под фактические резисторы)</legend>
 <label>Коэффициент делителя на входе (R2/(R1+R2))</label><input type="number" step="0.001" min="0.1" max="1" name="divRatio" value=")rawliteral"; html += String(throttleInputDividerRatio, 3);
   html += R"rawliteral(">
-<p style="color:#888;font-size:13px">По умолчанию для R1=10к, R2=24к: 24/(10+24) &#8776; 0.706</p>
+<p style="color:#888;font-size:13px">По умолчанию для R1=10к, R2=20к: 20/(10+20) &#8776; 0.667</p>
 <label>Коэффициент усиления ОУ (1 + R4/R3)</label><input type="number" step="0.01" min="1" max="3" name="gain" value=")rawliteral"; html += String(throttleOutputGain, 2);
   html += R"rawliteral(">
-<p style="color:#888;font-size:13px">По умолчанию для R3=10к, R4=2.7к: 1 + 2.7/10 = 1.27 (ОУ MCP6002, питание +5В).</p>
+<p style="color:#888;font-size:13px">По умолчанию для R3=10к, R4=3.3к: 1 + 3.3/10 = 1.33 (ОУ MCP6002, питание +5В).</p>
 <p class="warn">Выше 3.3В на самом ЦАП ESP32 не поднимется — это аппаратный предел чипа. ОУ после ЦАП компенсирует это усилением, но выше напряжения питания ОУ (обычно 5В) выход тоже не поднимется физически.</p>
 </fieldset>
 <fieldset><legend>Мягкий старт/стоп</legend>
@@ -736,7 +591,6 @@ void handleThrottleSave() {
   server.send(200, "text/plain", "OK");
 }
 
-// ================= Веб: PAS =================
 void handlePasPage() {
   String html = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
@@ -747,32 +601,30 @@ label{display:block;margin-top:12px}input,select{width:100%;padding:6px;box-sizi
 button{margin-top:15px;padding:10px;width:100%;font-size:16px}
 .chk{display:flex;gap:8px;align-items:center;margin-top:12px}.chk input{width:auto}
 fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
+#levels input{margin-top:4px}
 </style></head><body>
 <p><a href="/" style="color:#4a90d9">&larr; Настройки</a></p>
-<h1>PAS</h1>
+<h1>PAS (ассистент педалей)</h1>
 <form id="f">
 <fieldset><legend>Датчик</legend>
-<label>Количество магнитов</label><input type="number" name="magnets" value=")rawliteral"; html += String(pasMagnetCount);
-  html += R"rawliteral(">
-<label>Направление срабатывания</label>
-<select name="edge">
-<option value="2")rawliteral"; html += (pasEdgeMode==FALLING?" selected":"");
-  html += R"rawliteral(>При уходе магнита (FALLING)</option>
-<option value="3")rawliteral"; html += (pasEdgeMode==RISING?" selected":"");
-  html += R"rawliteral(>При появлении магнита (RISING)</option>
-<option value="1")rawliteral"; html += (pasEdgeMode==CHANGE?" selected":"");
-  html += R"rawliteral(>При любом изменении (CHANGE)</option>
+<label>Количество магнитов в диске</label>
+<select name="magnets">
+<option value="5" )rawliteral"; html += pasMagnetCount==5?"selected":""; html += R"rawliteral(>5 магнитов (стандарт 1)</option>
+<option value="8" )rawliteral"; html += pasMagnetCount==8?"selected":""; html += R"rawliteral(>8 магнитов (стандарт 2)</option>
+<option value="12" )rawliteral"; html += pasMagnetCount==12?"selected":""; html += R"rawliteral(>12 магнитов (KT-V12 / частый)</option>
 </select>
-<label>Угол активации</label>
+<label>Срабатывание по фронту</label>
+<select name="edge">
+<option value=")rawliteral"; html += String(FALLING); html += R"rawliteral(" )rawliteral"; html += pasEdgeMode==FALLING?"selected":""; html += R"rawliteral(>FALLING (спад, по умолчанию)</option>
+<option value=")rawliteral"; html += String(RISING); html += R"rawliteral(" )rawliteral"; html += pasEdgeMode==RISING?"selected":""; html += R"rawliteral(>RISING (нарастание)</option>
+<option value=")rawliteral"; html += String(CHANGE); html += R"rawliteral(" )rawliteral"; html += pasEdgeMode==CHANGE?"selected":""; html += R"rawliteral(>CHANGE (оба фронта — в 2 раза чувствительнее)</option>
+</select>
+<label>Угол для активации ассиста</label>
 <select name="angle">
-<option value="90")rawliteral"; html += (pasActivationAngle==90?" selected":"");
-  html += R"rawliteral(>90&deg;</option>
-<option value="180")rawliteral"; html += (pasActivationAngle==180?" selected":"");
-  html += R"rawliteral(>180&deg;</option>
-<option value="270")rawliteral"; html += (pasActivationAngle==270?" selected":"");
-  html += R"rawliteral(>270&deg;</option>
-<option value="360")rawliteral"; html += (pasActivationAngle==360?" selected":"");
-  html += R"rawliteral(>360&deg;</option>
+<option value="45" )rawliteral"; html += pasActivationAngle==45?"selected":""; html += R"rawliteral(>45&deg; (1/8 оборота — мгновенный старт)</option>
+<option value="90" )rawliteral"; html += pasActivationAngle==90?"selected":""; html += R"rawliteral(>90&deg; (1/4 оборота — комфортный)</option>
+<option value="180" )rawliteral"; html += pasActivationAngle==180?"selected":""; html += R"rawliteral(>180&deg; (1/2 оборота — безопасный, по умолч.)</option>
+<option value="360" )rawliteral"; html += pasActivationAngle==360?"selected":""; html += R"rawliteral(>360&deg; (полный оборот)</option>
 </select>
 <label>Тайм-аут импульса (мс)</label><input type="number" name="timeout" value=")rawliteral"; html += String(pasTimeoutMs);
   html += R"rawliteral(">
@@ -861,120 +713,157 @@ void handlePasSave() {
   server.send(200, "text/plain", "OK");
 }
 
-// ================= Веб: заливка прошивки прямо через браузер =================
-void handleUpdatePage() {
-  server.send(200, "text/html", R"rawliteral(
+void handleWifiPage() {
+  String html = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Обновление прошивки</title>
-<style>body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#111;color:#eee}
-button{margin-top:15px;padding:10px;width:100%;font-size:16px}</style>
-</head><body>
-<p><a href="/" style="color:#4a90d9">&larr; Настройки</a></p>
-<h1>Загрузить прошивку (.bin)</h1>
-<p style="color:#888;font-size:13px">В Arduino IDE: Sketch &rarr; Export Compiled Binary — появится .bin рядом со скетчем. Выбери его тут и жми "Залить". Займёт секунд 20-30, плата сама перезагрузится.</p>
-<form method="POST" action="/update" enctype="multipart/form-data">
-<input type="file" name="update" accept=".bin">
-<button type="submit">Залить</button>
+<title>WiFi</title>
+<style>
+body{background:#111;color:#eee;font-family:sans-serif;padding:15px;max-width:400px;margin:auto}
+button{padding:10px;width:100%;font-size:15px;border-radius:8px;border:none;background:#333;color:#eee;margin-top:10px}
+input{width:100%;padding:8px;box-sizing:border-box;background:#222;color:#eee;border:1px solid #444;margin-top:8px}
+.net{padding:10px;background:#1a1a1a;border-radius:6px;margin-top:6px;cursor:pointer;display:flex;justify-content:space-between}
+.net:active{background:#333}
+a{color:#4a90d9}
+.status{color:#888;font-size:13px;margin:10px 0}
+</style></head><body>
+<p><a href="/">&larr; Настройки</a></p>
+<h1>WiFi</h1>
+<div class="status" id="status">Сейчас: )rawliteral";
+  html += (WiFi.status() == WL_CONNECTED) ? ("подключено к " + WiFi.SSID() + ", IP " + WiFi.localIP().toString()) : "не подключено";
+  html += R"rawliteral(</div>
+
+<button onclick="scan()">Найти сети</button>
+<div id="nets"></div>
+
+<form id="f" style="margin-top:20px">
+<label>SSID</label><input type="text" id="ssid" name="ssid" value="">
+<label>Пароль</label><input type="password" id="pass" name="pass" value="">
+<button type="submit">Подключиться и сохранить</button>
 </form>
+
+<script>
+function scan() {
+  document.getElementById('nets').innerHTML = 'Ищу...';
+  fetch('/wifi/scan').then(r=>r.json()).then(list=>{
+    if (!list.length) { document.getElementById('nets').innerHTML = 'Ничего не нашлось'; return; }
+    document.getElementById('nets').innerHTML = list.map(n =>
+      '<div class="net" onclick="pick(\''+n.ssid.replace(/'/g,"")+'\')"><span>'+n.ssid+'</span><span>'+n.rssi+' dBm</span></div>'
+    ).join('');
+  });
+}
+function pick(ssid) {
+  document.getElementById('ssid').value = ssid;
+  document.getElementById('pass').focus();
+}
+document.getElementById('f').addEventListener('submit', function(e){
+  e.preventDefault();
+  const d = new FormData(this);
+  document.getElementById('status').innerText = 'Подключаюсь...';
+  fetch('/wifi/save', {method:'POST', body:d}).then(()=>{
+    setTimeout(()=>location.reload(), 4000);
+  });
+});
+</script>
 </body></html>
-)rawliteral");
+)rawliteral";
+  server.send(200, "text/html", html);
 }
 
-void handleUpdateUpload() {
-  HTTPUpload& upload = server.upload();
-  if (upload.status == UPLOAD_FILE_START) {
-    Serial.printf("Обновление: %s\n", upload.filename.c_str());
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) Update.printError(Serial);
-  } else if (upload.status == UPLOAD_FILE_END) {
-    if (Update.end(true)) Serial.printf("Обновление успешно: %u байт\n", upload.totalSize);
-    else Update.printError(Serial);
+void handleWifiScan() {
+  int n = WiFi.scanNetworks();
+  String json = "[";
+  for (int i = 0; i < n; i++) {
+    if (i > 0) json += ",";
+    String s = WiFi.SSID(i);
+    s.replace("\"", "");
+    json += "{\"ssid\":\"" + s + "\",\"rssi\":" + String(WiFi.RSSI(i)) + "}";
   }
+  json += "]";
+  WiFi.scanDelete();
+  server.send(200, "application/json", json);
+}
+
+void handleWifiSave() {
+  String newSsid = server.arg("ssid");
+  String newPass = server.arg("pass");
+  if (newSsid.length() > 0) {
+    wifiCredsSave(newSsid, newPass);
+    wifiConnect();
+  }
+  server.send(200, "text/plain", "OK");
+}
+
+void handleUpdatePage() {
+  String html = "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<title>OTA</title><style>body{font-family:sans-serif;background:#18181b;color:#f4f4f5;padding:20px;}";
+  html += "button{background:#38bdf8;color:#000;padding:12px;border:0;border-radius:6px;font-weight:bold;width:100%;cursor:pointer;}";
+  html += "</style></head><body><h2>OTA (.bin)</h2><form method='POST' action='/update' enctype='multipart/form-data'>";
+  html += "<input type='file' name='update'><br><button type='submit'>Прошить</button></form><p><a href='/' style='color:#38bdf8;'>&larr; Меню</a></p></body></html>";
+  server.send(200, "text/html", html);
 }
 
 void handleUpdateResult() {
   server.sendHeader("Connection", "close");
-  server.send(200, "text/plain", Update.hasError() ? "ОШИБКА обновления" : "OK, перезагружаюсь...");
+  server.send(200, "text/plain", (Update.hasError()) ? "ERROR" : "OK");
   delay(1000);
   ESP.restart();
 }
 
-// ================= Setup / Loop =================
-// ================= WiFi: сохранённая сеть (сверх дефолтной из кода) =================
-// ssid/password вверху файла — это дефолт "из коробки". Если через веб выберешь
-// другую сеть — она сохранится в NVS и будет использоваться вместо дефолтной.
-String storedSsid = "";
-String storedPass = "";
-
-void wifiCredsLoad() {
-  prefs.begin("wifi", true);
-  storedSsid = prefs.getString("ssid", "");
-  storedPass = prefs.getString("pass", "");
-  prefs.end();
-}
-
-void wifiCredsSave(const String &newSsid, const String &newPass) {
-  prefs.begin("wifi", false);
-  prefs.putString("ssid", newSsid);
-  prefs.putString("pass", newPass);
-  prefs.end();
-  storedSsid = newSsid;
-  storedPass = newPass;
-}
-
-void wifiConnect() {
-  String useSsid = storedSsid.length() > 0 ? storedSsid : String(ssid);
-  String usePass = storedSsid.length() > 0 ? storedPass : String(password);
-  WiFi.disconnect();
-  delay(100);
-  WiFi.begin(useSsid.c_str(), usePass.c_str());
-  Serial.print("Подключение к "); Serial.println(useSsid);
+void handleUpdateUpload() {
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) Update.begin(UPDATE_SIZE_UNKNOWN);
+  else if (upload.status == UPLOAD_FILE_WRITE) Update.write(upload.buf, upload.currentSize);
+  else if (upload.status == UPLOAD_FILE_END) Update.end(true);
 }
 
 void setup() {
   Serial.begin(115200);
-
+  Serial.println("--- START SETUP ---");
   pinMode(BRAKE_PIN, INPUT_PULLUP);
   pinMode(PAS_SENSOR_PIN, INPUT_PULLUP);
   pinMode(PAS_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(JOY_SW_PIN, INPUT_PULLUP);
 
-  pinMode(BTN_HEADLIGHT_PIN, INPUT_PULLUP);
-  pinMode(BTN_TURN_LEFT_PIN, INPUT_PULLUP);
-  pinMode(BTN_TURN_RIGHT_PIN, INPUT_PULLUP);
-  pinMode(BTN_HORN_PIN, INPUT_PULLUP);
-  pinMode(TURN_LEFT_PIN, OUTPUT);
-  pinMode(TURN_RIGHT_PIN, OUTPUT);
-  pinMode(HORN_PIN, OUTPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
-
-  ledcAttach(HEADLIGHT_PIN, 5000, 8);
-  ledcAttach(DRL_PIN, 5000, 8);
-  ledcWrite(DRL_PIN, DRL_DEFAULT_BRIGHTNESS); // ДХО горит всегда, пока плата включена
-
-  // Настоящий ЦАП ESP32 — ledcAttach больше не нужен, dacWrite() работает сразу
+  display.begin();
+  display.control(MD_MAX72XX::INTENSITY, 5);
+  display.clear();
+  display.setChar(0, 'O');
+  display.setChar(1, 'K');
 
   throttleSettingsLoad();
   pasSettingsLoad();
-
   setThrottleOutputSafeZero();
-
   reattachPasInterrupt();
 
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_STA); // Сначала пытаемся подключиться как клиент
   wifiCredsLoad();
+  Serial.println("--- Before wifiConnect() ---");
   wifiConnect();
-  Serial.print("Подключение к WiFi");
-  unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 8000) {
-    delay(300); Serial.print(".");
+  Serial.println("--- After wifiConnect() ---");
+  Serial.print("Initial WiFi Status: ");
+  Serial.println(WiFi.status());
+
+  // Ждем подключения до 10 секунд (20 итераций по 500мс)
+  int wifi_retries = 0;
+  while (WiFi.status() != WL_CONNECTED && wifi_retries < 20) {
+    delay(500);
+    Serial.print(".");
+    wifi_retries++;
   }
-  Serial.println();
+  Serial.println(); // Новая строка после точек
+
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Открой в браузере: http://"); Serial.println(WiFi.localIP());
+    Serial.println("[WiFi] Успешно подключено к сети!");
+    Serial.print("[WiFi] Веб-интерфейс: http://");
+    Serial.println(WiFi.localIP());
   } else {
-    Serial.println("WiFi не найден — едем без веб-панели, газ/тормоз/PAS работают штатно.");
+    Serial.println("[WiFi] Ошибка подключения к WiFi сети. Переключаемся в режим точки доступа...");
+    WiFi.mode(WIFI_AP); // Переключаемся в режим точки доступа
+    WiFi.softAP("BikeControllerAP", "123456789");
+    IPAddress myAP = WiFi.softAPIP();
+    Serial.print("[WiFi] Точка доступа запущена: BikeControllerAP\n[WiFi] Пароль: 123456789\n[WiFi] Веб-интерфейс доступен по ссылке: http://");
+    Serial.println(myAP);
   }
 
   server.on("/", handleHub);
@@ -989,9 +878,10 @@ void setup() {
   server.on("/debug/data", handleDebugData);
   server.on("/update", HTTP_GET, handleUpdatePage);
   server.on("/update", HTTP_POST, handleUpdateResult, handleUpdateUpload);
+  Serial.println("--- SETUP COMPLETE ---");
   server.begin();
 
-  Serial.println("Готово. Упрощённый прототип запущен.");
+  Serial.println("Bike Controller Firmware Ready!");
 }
 
 void loop() {
@@ -999,9 +889,6 @@ void loop() {
   updatePasDetection();
   updatePasButton();
   updateThrottle();
-  updateLightButtons();
-  updateTurnSignals();
-  updateHorn();
-  updateBuzzer();
+  updateDisplay();
   delay(5);
 }
