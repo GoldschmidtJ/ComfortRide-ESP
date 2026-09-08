@@ -1,7 +1,11 @@
+#include "nvs_flash.h"
+
+bool pasInterruptAttached = false;
 #include <Arduino.h>
 
 #include <WiFi.h>
 #include <ESPmDNS.h>
+#include <DNSServer.h>
 #include <WebServer.h>
 #include <Preferences.h>
 #include <Update.h>
@@ -11,6 +15,15 @@
 const char* ssid = "Donut";
 const char* password = "doughnut";
 const char* MDNS_HOST = "openbike";
+
+// Статический IP для надежного подключения к точке доступа телефона (Android)
+const IPAddress staticSTAIP(192, 168, 43, 88);
+const IPAddress staticSTAGateway(192, 168, 43, 1);
+const IPAddress staticSTASubnet(255, 255, 255, 0);
+const IPAddress staticSTADNS(192, 168, 43, 1);
+
+DNSServer dnsServer;
+const byte DNS_PORT = 53;
 
 // ================= ПИНЫ (распаять сюда) =================
 // Газ: GND -> GND, +5В -> 5В, Сигнал -> GPIO34 (ВНИМАНИЕ: см. предупреждение по напряжению ниже)
@@ -84,12 +97,16 @@ void handleSettingsExport();
 void handleSettingsImport();
 void handleUpdatePage();
 void handleSystemStatus();
+void criticalControlTask(void *pvParameters);
+void nonCriticalTask(void *pvParameters);
 
 // Forward declarations of state variables used in status endpoint
 extern bool pasEnabled;
 extern int pasCurrentLevel;
 extern int pasLevelsCount;
 extern bool cruiseEnabled;
+extern int cruiseCurrentLevel;
+extern int cruiseLevelsCount;
 
 // ================= System status tracking ================
 unsigned long cpuMeasureStartMs = 0;
@@ -117,13 +134,15 @@ void handleSystemStatus() {
     ipStr = WiFi.softAPIP().toString();
   }
 
+  float chipTemp = temperatureRead(); // Read internal temperature sensor
+
   String json = "{";
-  json += "\"cpu\":" + String(cpuUsagePercent) + ",";
+  json += "\"cpu\":" + String(cpuUsagePercent) + ","; // Assuming cpuUsagePercent is globally available and updated
   json += "\"ram_pct\":" + String(ramPct) + ",";
   json += "\"ram_free_kb\":" + String(freeHeap / 1024) + ",";
   json += "\"ram_total_kb\":" + String(totalHeap / 1024) + ",";
-  json += "\"rom_sketch_kb\":" + String(ESP.getSketchSize() / 1024) + ","; // Added sketch size
-  json += "\"rom_total_kb\":" + String(ESP.getFlashChipSize() / 1024) + ","; // Added total flash size
+  json += "\"rom_sketch_kb\":" + String(ESP.getSketchSize() / 1024) + ",";
+  json += "\"rom_total_kb\":" + String(ESP.getFlashChipSize() / 1024) + ",";
   json += "\"wifi_mode\":\"" + wifiMode + "\",";
   json += "\"wifi_ssid\":\"" + ssidName + "\",";
   json += "\"wifi_ip\":\"" + ipStr + "\",";
@@ -133,12 +152,13 @@ void handleSystemStatus() {
   json += "\"pas_lvl\":" + String(pasCurrentLevel) + ",";
   json += "\"pas_cnt\":" + String(pasLevelsCount) + ",";
   json += "\"cruise_en\":" + String(cruiseEnabled ? "true" : "false") + ",";
-  json += "\"bt_active\":false";
+  json += "\"cruise_lvl\":" + String(cruiseCurrentLevel) + ",";
+  json += "\"cruise_cnt\":" + String(cruiseLevelsCount) + ",";
+  json += "\"bt_active\":false,"; // Assuming this is a boolean
+  json += "\"temp\":" + String(round(chipTemp)); // Add internal temperature, rounded
   json += "}";
   server.send(200, "application/json", json);
 }
-
-// --- New Cruise Control forward declarations ---
 void cruiseSettingsSave();
 void cruiseSettingsLoad();
 void handleCruisePage();
@@ -187,17 +207,57 @@ float calibrateThrottleV(float rawV) {
 const int CRUISE_MAX_LEVELS = 100;
 int cruiseLevelsCount = 3;
 float cruiseLevelPercent[CRUISE_MAX_LEVELS];
-bool cruiseEnabled = true; // Cruise control enabled by default
+bool cruiseEnabled = false; // Cruise control выключен по умолчанию
+int cruiseCurrentLevel = 0; // 0 = выключен
+float cruiseStartPercent = 20.0f; // Начальное значение для автораспределения
+float cruiseEndPercent = 100.0f;  // Конечное значение для автораспределения
 bool cruiseSoftStartEnabled = false;
 bool cruiseSoftStopEnabled = false;
 unsigned long cruiseSoftStartMs = 500;
 unsigned long cruiseSoftStopMs = 800;
 
-// Auto-distribution for cruise levels
+float cruiseSmoothOutV = 0;
+unsigned long cruiseSmoothLastMs = 0;
+
+// Auto-distribution for cruise levels (между cruiseStartPercent и cruiseEndPercent)
 void cruiseAutoDistribute() {
-  for (int i = 0; i < cruiseLevelsCount; i++) {
-    cruiseLevelPercent[i] = (float)(i + 1) * 100.0f / (float)cruiseLevelsCount;
+  if (cruiseLevelsCount <= 0) return;
+  if (cruiseLevelsCount == 1) {
+    cruiseLevelPercent[0] = cruiseEndPercent;
+    return;
   }
+  for (int i = 0; i < cruiseLevelsCount; i++) {
+    float frac = (float)i / (float)(cruiseLevelsCount - 1);
+    cruiseLevelPercent[i] = cruiseStartPercent + frac * (cruiseEndPercent - cruiseStartPercent);
+  }
+}
+
+float applyCruiseSmoothing(float targetV) {
+  unsigned long now = millis();
+  unsigned long dt = now - cruiseSmoothLastMs;
+  if (dt == 0) dt = 1;
+  cruiseSmoothLastMs = now;
+
+  float diff = targetV - cruiseSmoothOutV;
+  bool rising = diff > 0;
+  bool enabled = rising ? cruiseSoftStartEnabled : cruiseSoftStopEnabled;
+  unsigned long tau = rising ? cruiseSoftStartMs : cruiseSoftStopMs;
+
+  if (!enabled || tau == 0) { cruiseSmoothOutV = targetV; return targetV; }
+
+  float alpha = 1.0f - expf(-(float)dt / (float)tau);
+  cruiseSmoothOutV += diff * alpha;
+  if (fabs(targetV - cruiseSmoothOutV) < 0.01f) cruiseSmoothOutV = targetV;
+  return cruiseSmoothOutV;
+}
+
+float getCruiseTargetV() {
+  if (!cruiseEnabled) return 0;
+  if (cruiseCurrentLevel <= 0 || cruiseCurrentLevel > cruiseLevelsCount) return 0;
+  float pct = cruiseLevelPercent[cruiseCurrentLevel - 1];
+  float outMin = throttleOutMinV;
+  float outMax = (throttleOutMaxV > outMin + 0.01f) ? throttleOutMaxV : (outMin + 0.01f);
+  return outMin + (pct / 100.0f) * (outMax - outMin);
 }
 
 // ================= ГАЗ: мягкий старт / мягкий стоп (в вольтах) =================
@@ -295,8 +355,11 @@ void updatePasDetection() {
 }
 
 void reattachPasInterrupt() {
-  detachInterrupt(digitalPinToInterrupt(PAS_SENSOR_PIN));
+  if (pasInterruptAttached) {
+    detachInterrupt(digitalPinToInterrupt(PAS_SENSOR_PIN));
+  }
   attachInterrupt(digitalPinToInterrupt(PAS_SENSOR_PIN), onPasPulse, pasEdgeMode);
+  pasInterruptAttached = true;
 }
 
 // ================= PAS: уровни (усилие в %, до 20 штук) =================
@@ -344,7 +407,10 @@ float getPasTargetV() {
   if (!pasEnabled) return 0; // PAS fully disabled
   if (pasCurrentLevel <= 0 || pasCurrentLevel > pasLevelsCount) return 0;
   if (!pasConfirmedActive) return 0;
-  return (pasLevelPercent[pasCurrentLevel - 1] / 100.0f) * throttleOutMaxV;
+  float pct = pasLevelPercent[pasCurrentLevel - 1];
+  float outMin = throttleOutMinV;
+  float outMax = (throttleOutMaxV > outMin + 0.01f) ? throttleOutMaxV : (outMin + 0.01f);
+  return outMin + (pct / 100.0f) * (outMax - outMin);
 }
 
 void pasSettingsSave() {
@@ -364,7 +430,7 @@ void pasSettingsSave() {
 }
 
 void pasSettingsLoad() {
-  prefs.begin("pas", true);
+  prefs.begin("pas", false);
   pasMagnetCount = prefs.getInt("magnets", 12);
   pasEdgeMode = prefs.getInt("edge", FALLING);
   pasActivationAngle = prefs.getInt("angle", 180);
@@ -395,6 +461,10 @@ void updatePasButton() {
       btnStable = reading;
       if (btnStable == LOW) {
         pasCurrentLevel = (pasCurrentLevel + 1) % (pasLevelsCount + 1);
+        pasEnabled = (pasCurrentLevel > 0);
+        if (pasEnabled) {
+          cruiseEnabled = false; // Отключаем круиз при физическом переключении PAS
+        }
         Serial.printf("PAS уровень: %d/%d\n", pasCurrentLevel, pasLevelsCount);
       }
     }
@@ -509,7 +579,7 @@ struct DebugSample {
 DebugSample debugBuffer[DEBUG_BUFFER_SIZE];
 int debugBufferHead = 0;
 unsigned long lastDebugSampleMs = 0;
-const unsigned long DEBUG_SAMPLE_INTERVAL_MS = 20;
+const unsigned long DEBUG_SAMPLE_INTERVAL_MS = 100; // Sample every 100ms for oscilloscope
 
 void updateDebugBuffer(float throttleInV, float throttleOutV) {
   unsigned long now = millis();
@@ -537,6 +607,7 @@ void updateThrottle() {
     setThrottleOutputSafeZero();
     throttleSmoothOutV = 0;
     pasSmoothOutV = 0;
+    cruiseSmoothOutV = 0;
     updateDebugBuffer(0, 0);
     return;
   }
@@ -553,7 +624,13 @@ void updateThrottle() {
   float pasTargetV = getPasTargetV();
   float pasOutV = applyPasSmoothing(pasTargetV);
 
-  float combinedV = (throttleOutV > pasOutV) ? throttleOutV : pasOutV; // целевое реальное напряжение на выходе
+  float cruiseTargetV = getCruiseTargetV();
+  float cruiseOutV = applyCruiseSmoothing(cruiseTargetV);
+
+  float combinedV = throttleOutV;
+  if (pasOutV > combinedV) combinedV = pasOutV;
+  if (cruiseOutV > combinedV) combinedV = cruiseOutV;
+
   // ОУ (канал Б) поднимает напряжение в throttleOutputGain раз — значит на
   // сам ЦАП нужно подать МЕНЬШЕ, чтобы после усиления получить цель.
   float dacTargetV = combinedV / throttleOutputGain;
@@ -599,6 +676,9 @@ String getTopBarHtml() {
     <span class="tb-dot dot-gray" id="tbWifiDot"></span>
     <span id="tbWifiTxt">...</span>
   </a>
+  <div class="tb-item" title="Температура процессора">
+    <span>Temp:</span> <b id="tbTemp">--°C</b>
+  </div>
   <div class="tb-item" title="Bluetooth (не используется)" style="opacity:0.7">
     <span>BT:</span>
     <span class="tb-dot dot-gray"></span>
@@ -642,7 +722,31 @@ function updateSysStatus(){
         txt.innerText = "Подключение...";
       }
     }
-  }).catch(e=>{});
+    
+    // Update temperature display
+    const tempEl = document.getElementById("tbTemp");
+    if(tempEl && d.temp !== undefined) {
+      tempEl.innerText = d.temp + "°C";
+      // Optional: Add styling based on temperature
+      if (d.temp > 75) { // Example threshold for overheating
+        tempEl.style.color = "#e74c3c"; // Red for high temperature
+      } else if (d.temp > 60) {
+        tempEl.style.color = "#f39c12"; // Orange for warning
+      } else {
+        tempEl.style.color = "#eee"; // Default color
+      }
+    } else if (tempEl) {
+      tempEl.innerText = "--°C"; // Show fallback if temp is not available
+    }
+
+  }).catch(e=>{
+    // Handle fetch errors, perhaps by showing error indicators
+    console.error("Error updating system status:", e);
+    document.getElementById("tbCpu")?.innerText = "ERR";
+    document.getElementById("tbRam")?.innerText = "ERR";
+    document.getElementById("tbTemp")?.innerText = "ERR";
+    document.getElementById("tbWifiTxt")?.innerText = "ERR";
+  });
 }
 setInterval(updateSysStatus, 2000);
 updateSysStatus();
@@ -681,7 +785,7 @@ a{color:#4a90d9}
   <button type="button" class="tbtn" onclick="setTimeScale(10)" id="tb10">10с</button>
   <button type="button" class="tbtn" onclick="setTimeScale(30)" id="tb30">30с</button>
   <label style="margin-left:10px;font-weight:bold;font-size:14px;">
-    <input type="checkbox" id="chkOscilloscope" onchange="updateOscilloscopeState()" checked> Запускать осциллограф
+    <input type="checkbox" id="chkOscilloscope" onchange="updateOscilloscopeState()"> Запускать осциллограф
   </label>
 </div>
 <canvas id="chart" width="700" height="320"></canvas>
@@ -692,7 +796,7 @@ a{color:#4a90d9}
 <span><span class="dot" style="background:#2ecc71"></span>PAS активен</span>
 <span><span class="dot" style="background:#9b59b6"></span>Кнопка PAS</span>
 </div>
-<div id="vals">Загрузка...</div>
+<div id="vals">Осциллограф отключен. Включите галочку для запуска.</div>
 
 <script>
 const canvas = document.getElementById('chart');
@@ -700,7 +804,7 @@ const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
 const VMAX = 5.0; // шкала по напряжению, В
 let currentTimeScaleSec = 5;
-let isOscRunning = true;
+let isOscRunning = false;
 
 function setTimeScale(sec) {
   currentTimeScaleSec = sec;
@@ -787,7 +891,6 @@ function refresh() {
   }).catch(e=>{});
 }
 setInterval(refresh, 200);
-refresh();
 </script>
 )rawliteral" + getTopBarJs() + R"rawliteral(
 </body></html>
@@ -976,7 +1079,7 @@ void handleHub() {
   String html = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenBike Controller v0.1.5-alpha</title>
+<title>OpenBike Controller v0.1.6-alpha</title>
 <style>
 )rawliteral" + getTopBarCss() + R"rawliteral(
 body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#111;color:#eee}
@@ -987,39 +1090,57 @@ a.card{display:block;background:#333;color:#fff;padding:15px;border-radius:8px;m
 a.card:active{background:#444}
 .warn{background:#5c1a1a;padding:12px;border-radius:8px;margin-bottom:16px;font-weight:bold;font-size:13px}
 
-/* Блок кнопок управления P и C */
-.btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
-.mode-btn{background:#222;border:2px solid #444;border-radius:12px;padding:15px 10px;text-align:center;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:all .15s}
-.mode-btn:active{transform:scale(0.96)}
-.mode-btn.active-pas{background:#1b382b;border-color:#2ecc71;box-shadow:0 0 10px rgba(46,204,113,0.3)}
-.mode-btn.active-cruise{background:#1b2f4c;border-color:#3498db;box-shadow:0 0 10px rgba(52,152,219,0.3)}
-.mode-btn .btn-letter{font-size:32px;font-weight:900;line-height:1}
-.mode-btn .btn-label{font-size:12px;color:#888;margin-top:6px;text-transform:uppercase;letter-spacing:1px}
-.mode-btn .btn-val{font-size:15px;font-weight:bold;margin-top:4px;color:#fff}
-.mode-btn.active-pas .btn-letter{color:#2ecc71}
-.mode-btn.active-cruise .btn-letter{color:#3498db}
-.btn-hint{font-size:10px;color:#666;margin-top:4px}
+/* D-Pad Джойстик */
+.joystick-panel{background:#181818;border:2px solid #333;border-radius:18px;padding:16px;margin-bottom:16px;box-shadow:0 8px 24px rgba(0,0,0,0.6)}
+.joy-screen{background:#0a0f0d;border:2px solid #1e3a29;border-radius:10px;padding:10px 14px;margin-bottom:16px;text-align:center;font-family:monospace}
+.screen-mode{font-size:13px;font-weight:bold;letter-spacing:1px;color:#888;text-transform:uppercase}
+.screen-mode.mode-pas{color:#2ecc71}
+.screen-mode.mode-cruise{color:#3498db}
+.screen-mode.mode-off{color:#e74c3c}
+.screen-val{font-size:26px;font-weight:900;color:#fff;margin:4px 0}
+.screen-status{font-size:11px;color:#888;font-weight:bold;text-transform:uppercase}
+.screen-status.dirty{color:#f39c12;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:0.4}}
+
+.dpad-container{display:grid;grid-template-columns:80px 80px 80px;grid-template-rows:60px 60px 60px;gap:10px;justify-content:center;margin:10px auto}
+.dpad-btn{background:#282828;color:#eee;border:2px solid #444;border-bottom-width:5px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:all .08s}
+.dpad-btn:active{transform:translateY(3px);border-bottom-width:2px;background:#383838}
+.btn-up{grid-column:2;grid-row:1}
+.btn-left{grid-column:1;grid-row:2}
+.btn-ok{grid-column:2;grid-row:2;background:#1b442b;border-color:#2ecc71;border-bottom-color:#1e7e44;color:#2ecc71;font-size:18px}
+.btn-ok:active{background:#235838}
+.btn-ok.dirty-pulse{background:#633e08;border-color:#f39c12;border-bottom-color:#a86708;color:#f39c12;animation:pulse 1s infinite}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(243,156,18,0.7)}}
+.btn-right{grid-column:3;grid-row:2}
+.btn-down{grid-column:2;grid-row:3}
+.joy-legend{display:flex;justify-content:space-around;font-size:11px;color:#777;margin-top:10px;text-align:center}
 </style>
 </head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 <div class="header">
   <h1>OpenBike Controller</h1>
-  <div class="version">v0.1.5-alpha</div>
+  <div class="version">v0.1.6-alpha</div>
 </div>
 
-<div class="btn-grid">
-  <div class="mode-btn" id="pasBtn">
-    <div class="btn-letter">P</div>
-    <div class="btn-label">PAS Ассистент</div>
-    <div class="btn-val" id="pasTxt">ВЫКЛ</div>
-    <div class="btn-hint">Клик: уровень 0 &rarr; 1 ... &rarr; N</div>
+<div class="joystick-panel">
+  <div class="joy-screen">
+    <div class="screen-mode" id="joyMode">PAS</div>
+    <div class="screen-val" id="joyVal">УРОВЕНЬ 1</div>
+    <div class="screen-status" id="joyStatus">ПОДТВЕРЖДЕНО</div>
   </div>
 
-  <div class="mode-btn" id="cruiseBtn">
-    <div class="btn-letter">C</div>
-    <div class="btn-label">Круиз-контроль</div>
-    <div class="btn-val" id="cruiseTxt">ВЫКЛ</div>
-    <div class="btn-hint">Клик: вкл/выкл</div>
+  <div class="dpad-container">
+    <button type="button" class="dpad-btn btn-up" id="btnUp" title="Увеличить">&#9650;</button>
+    <button type="button" class="dpad-btn btn-left" id="btnLeft" title="Режим влево">&#9664;</button>
+    <button type="button" class="dpad-btn btn-ok" id="btnOk" title="Применить">OK</button>
+    <button type="button" class="dpad-btn btn-right" id="btnRight" title="Режим вправо">&#9654;</button>
+    <button type="button" class="dpad-btn btn-down" id="btnDown" title="Уменьшить">&#9660;</button>
+  </div>
+
+  <div class="joy-legend">
+    <span>&#9664; &#9654; Режим (PAS/Круиз)</span>
+    <span>&#9650; &#9660; Уровень</span>
+    <span><b>OK</b> Применить</span>
   </div>
 </div>
 
@@ -1032,86 +1153,181 @@ a.card:active{background:#444}
 <a class="card" href="/system">Система &rarr;</a>
 )rawliteral" + getTopBarJs() + R"rawliteral(
 <script>
-let pasEn = )rawliteral" + String(pasEnabled ? "true" : "false") + R"rawliteral(;
-let pasLvl = )rawliteral" + String(pasCurrentLevel) + R"rawliteral(;
-let pasMax = )rawliteral" + String(pasLevelsCount) + R"rawliteral(;
-let cruiseEn = )rawliteral" + String(cruiseEnabled ? "true" : "false") + R"rawliteral(;
+let activeMode = )rawliteral" + String(pasEnabled ? "\"pas\"" : (cruiseEnabled ? "\"cruise\"" : "\"off\"")) + R"rawliteral(;
+let activePasLvl = )rawliteral" + String(pasCurrentLevel) + R"rawliteral(;
+let activeCruiseLvl = )rawliteral" + String(cruiseCurrentLevel) + R"rawliteral(;
+const pasMax = )rawliteral" + String(pasLevelsCount) + R"rawliteral(;
+const cruiseMax = )rawliteral" + String(cruiseLevelsCount) + R"rawliteral(;
 
-function renderUI() {
-  const pBtn = document.getElementById("pasBtn");
-  const pTxt = document.getElementById("pasTxt");
-  if (!pasEn || pasLvl === 0) {
-    pBtn.className = "mode-btn";
-    pTxt.innerText = "ВЫКЛ";
-  } else {
-    pBtn.className = "mode-btn active-pas";
-    pTxt.innerText = "УРОВЕНЬ " + pasLvl + " / " + pasMax;
+let draftMode = (activeMode === "off") ? "pas" : activeMode;
+let draftPasLvl = activePasLvl;
+let draftCruiseLvl = activeCruiseLvl;
+let isDirty = false;
+let userInteractingUntil = 0;
+
+function vib() { if (navigator.vibrate) navigator.vibrate(30); }
+
+function renderJoystick() {
+  const modeEl = document.getElementById("joyMode");
+  const valEl = document.getElementById("joyVal");
+  const statusEl = document.getElementById("joyStatus");
+  const okBtn = document.getElementById("btnOk");
+
+  modeEl.className = "screen-mode mode-" + draftMode;
+  if (draftMode === "pas") {
+    modeEl.innerText = "РЕЖИМ: PAS АССИСТЕНТ";
+    if (draftPasLvl === 0) {
+      valEl.innerText = "ВЫКЛ (0 / " + pasMax + ")";
+    } else {
+      valEl.innerText = "УРОВЕНЬ " + draftPasLvl + " / " + pasMax;
+    }
+  } else if (draftMode === "cruise") {
+    modeEl.innerText = "РЕЖИМ: КРУИЗ-КОНТРОЛЬ";
+    if (draftCruiseLvl === 0) {
+      valEl.innerText = "ВЫКЛ (0 / " + cruiseMax + ")";
+    } else {
+      valEl.innerText = "УРОВЕНЬ " + draftCruiseLvl + " / " + cruiseMax;
+    }
   }
 
-  const cBtn = document.getElementById("cruiseBtn");
-  const cTxt = document.getElementById("cruiseTxt");
-  if (!cruiseEn) {
-    cBtn.className = "mode-btn";
-    cTxt.innerText = "ВЫКЛ";
+  let modified = false;
+  if (draftMode !== activeMode) modified = true;
+  else if (draftMode === "pas" && draftPasLvl !== activePasLvl) modified = true;
+  else if (draftMode === "cruise" && draftCruiseLvl !== activeCruiseLvl) modified = true;
+
+  isDirty = modified;
+  if (isDirty) {
+    statusEl.innerText = "НАЖМИТЕ OK ДЛЯ ПРИМЕНЕНИЯ";
+    statusEl.className = "screen-status dirty";
+    okBtn.className = "dpad-btn btn-ok dirty-pulse";
   } else {
-    cBtn.className = "mode-btn active-cruise";
-    cTxt.innerText = "АКТИВЕН";
+    let curLvl = (activeMode === "pas") ? activePasLvl : ((activeMode === "cruise") ? activeCruiseLvl : 0);
+    statusEl.innerText = (activeMode === "off" || curLvl === 0) ? "ОБЫЧНАЯ ЕЗДА (БЕЗ МОТОРА)" : "АКТИВНО И ПРИМЕНЕНО";
+    statusEl.className = "screen-status";
+    okBtn.className = "dpad-btn btn-ok";
   }
 }
 
-document.getElementById("pasBtn").addEventListener("click", () => {
-  if (navigator.vibrate) navigator.vibrate(40);
-  // Циклический выбор уровня: 0 -> 1 -> 2 -> ... -> N -> 0
-  if (!pasEn || pasLvl === 0) {
-    pasEn = true;
-    pasLvl = 1;
-  } else {
-    pasLvl++;
-    if (pasLvl > pasMax) {
-      pasLvl = 0;
-      pasEn = false;
-    }
-  }
-  renderUI();
-  fetch("/api/pas/set_level?level=" + pasLvl);
+function toggleMode() {
+  vib();
+  userInteractingUntil = Date.now() + 4000;
+  draftMode = (draftMode === "pas") ? "cruise" : "pas";
+  renderJoystick();
+}
+
+document.getElementById("btnLeft").addEventListener("click", toggleMode);
+document.getElementById("btnRight").addEventListener("click", toggleMode);
+
+document.getElementById("btnUp").addEventListener("click", () => {
+  vib();
+  userInteractingUntil = Date.now() + 4000;
+  if (draftMode === "pas") { if (draftPasLvl < pasMax) draftPasLvl++; }
+  else if (draftMode === "cruise") { if (draftCruiseLvl < cruiseMax) draftCruiseLvl++; }
+  renderJoystick();
 });
 
-document.getElementById("cruiseBtn").addEventListener("click", () => {
-  if (navigator.vibrate) navigator.vibrate(40);
-  cruiseEn = !cruiseEn;
-  renderUI();
-  fetch("/api/cruise/toggle");
+document.getElementById("btnDown").addEventListener("click", () => {
+  vib();
+  userInteractingUntil = Date.now() + 4000;
+  if (draftMode === "pas") { if (draftPasLvl > 0) draftPasLvl--; }
+  else if (draftMode === "cruise") { if (draftCruiseLvl > 0) draftCruiseLvl--; }
+  renderJoystick();
 });
 
-renderUI();
+document.getElementById("btnOk").addEventListener("click", () => {
+  vib();
+  if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+  userInteractingUntil = Date.now() + 2000;
+  let targetMode = draftMode;
+  let targetLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
 
-// Периодическая синхронизация с физической кнопкой на руле
+  activeMode = targetMode;
+  if (targetMode === "pas") { activePasLvl = targetLvl; activeCruiseLvl = 0; }
+  else if (targetMode === "cruise") { activeCruiseLvl = targetLvl; activePasLvl = 0; }
+  else { activePasLvl = 0; activeCruiseLvl = 0; }
+
+  renderJoystick();
+  fetch("/api/joystick/apply?mode=" + targetMode + "&level=" + targetLvl).catch(()=>{});
+});
+
+renderJoystick();
+
 setInterval(() => {
+  if (Date.now() < userInteractingUntil) return;
   fetch("/status/sys").then(r=>r.json()).then(d => {
-    if (d.pas_lvl !== undefined && (d.pas_lvl !== pasLvl || d.pas_en !== pasEn || d.cruise_en !== cruiseEn)) {
-      pasEn = d.pas_en;
-      pasLvl = d.pas_lvl;
-      if (d.pas_cnt) pasMax = d.pas_cnt;
-      cruiseEn = d.cruise_en;
-      renderUI();
+    let serverMode = d.pas_en ? "pas" : (d.cruise_en ? "cruise" : "off");
+    let serverPasLvl = d.pas_lvl || 0;
+    let serverCruiseLvl = d.cruise_lvl || 0;
+    if (serverMode !== activeMode || serverPasLvl !== activePasLvl || serverCruiseLvl !== activeCruiseLvl) {
+      activeMode = serverMode;
+      activePasLvl = serverPasLvl;
+      activeCruiseLvl = serverCruiseLvl;
+      if (!isDirty) {
+        draftMode = (activeMode === "off") ? "pas" : activeMode;
+        draftPasLvl = activePasLvl;
+        draftCruiseLvl = activeCruiseLvl;
+      }
+      renderJoystick();
     }
   }).catch(()=>{});
-}, 1000);
+}, 1500);
 </script>
 </body>
 </html>)rawliteral";
   server.send(200, "text/html", html);
 }
 
-// ================= Веб: API для кнопок PAS/Cruise =================
+void handleApiJoystickApply() {
+  if (!server.hasArg("mode")) {
+    server.send(400, "text/plain", "Missing mode");
+    return;
+  }
+  String mode = server.arg("mode");
+  int level = server.hasArg("level") ? server.arg("level").toInt() : 0;
+
+  if (mode == "pas") {
+    if (level >= 0 && level <= pasLevelsCount) {
+      pasCurrentLevel = level;
+      pasEnabled = (level > 0);
+      if (pasEnabled) {
+        cruiseEnabled = false; // Взаимное исключение
+        cruiseCurrentLevel = 0;
+      }
+      server.send(200, "text/plain", "OK");
+      return;
+    }
+  } else if (mode == "cruise") {
+    if (level >= 0 && level <= cruiseLevelsCount) {
+      cruiseCurrentLevel = level;
+      cruiseEnabled = (level > 0);
+      if (cruiseEnabled) {
+        pasEnabled = false; // Взаимное исключение
+        pasCurrentLevel = 0;
+      }
+      server.send(200, "text/plain", "OK");
+      return;
+    }
+  } else if (mode == "off") {
+    pasEnabled = false;
+    pasCurrentLevel = 0;
+    cruiseEnabled = false;
+    cruiseCurrentLevel = 0;
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+  server.send(400, "text/plain", "Bad Request");
+}
 void handleApiPasSetLevel() {
   if (server.hasArg("level")) {
     int newLevel = server.arg("level").toInt();
     // Уровень 0 means PAS off, levels 1..pasLevelsCount are valid
     if (newLevel >= 0 && newLevel <= pasLevelsCount) {
       pasCurrentLevel = newLevel;
-      // Автоматически включить/выключить PAS в зависимости от уровня
       pasEnabled = (newLevel > 0);
+      // Взаимное исключение: если PAS включен, круиз отключается
+      if (pasEnabled) {
+        cruiseEnabled = false;
+      }
       server.send(200, "text/plain", "OK");
       return;
     }
@@ -1123,14 +1339,21 @@ void handleApiPasToggleMode() {
   pasEnabled = !pasEnabled;
   if (!pasEnabled) {
     pasCurrentLevel = 0;
-  } else if (pasCurrentLevel == 0) {
-    pasCurrentLevel = 1; // По умолчанию уровень 1 при включении
+  } else {
+    if (pasCurrentLevel == 0) pasCurrentLevel = 1;
+    // Взаимное исключение: если PAS включен, круиз отключается
+    cruiseEnabled = false;
   }
   server.send(200, "text/plain", "OK");
 }
 
 void handleApiCruiseToggleMode() {
   cruiseEnabled = !cruiseEnabled;
+  // Взаимное исключение: если круиз включен, PAS отключается
+  if (cruiseEnabled) {
+    pasEnabled = false;
+    pasCurrentLevel = 0;
+  }
   server.send(200, "text/plain", "OK");
 }
 
@@ -1413,7 +1636,7 @@ unsigned long wifiConnectStartMs = 0;
 bool wifiApActive = false;
 
 void wifiCredsLoad() {
-  prefs.begin("wifi", true);
+  prefs.begin("wifi", false);
   storedSsid = prefs.getString("ssid", "");
   storedPass = prefs.getString("pass", "");
   prefs.end();
@@ -1436,60 +1659,73 @@ void apSettingsSave() {
 }
 
 void apSettingsLoad() {
-  prefs.begin("ap", true);
+  prefs.begin("ap", false);
   storedApSsid = prefs.getString("ssid", "BikeControllerAP");
   storedApPass = prefs.getString("pass", "");
   prefs.end();
 }
 
 void wifiConnect() {
-  String useSsid = storedSsid.length() > 0 ? storedSsid : String(ssid);
-  String usePass = storedSsid.length() > 0 ? storedPass : String(password);
-  WiFi.disconnect();
-  delay(50);
-  wifiConnectStartMs = millis();
+  String useSsid = (storedSsid.length() > 0) ? storedSsid : String(ssid);
+  String usePass = (storedSsid.length() > 0) ? storedPass : String(password);
+
+  WiFi.mode(WIFI_STA);
+  // Если подключение к хотспоту/внешней сети, настраиваем статический IP (если хотспот)
+  if (useSsid.indexOf("Android") != -1 || useSsid.indexOf("Hotspot") != -1 || useSsid == "Redmi" || useSsid == "Donut") {
+    WiFi.config(staticSTAIP, staticSTAGateway, staticSTASubnet, staticSTADNS);
+  }
+
+  Serial.printf("WiFi Connect -> SSID: '%s', Pass: '%s' (len=%d), Source: %s\n",
+                useSsid.c_str(), usePass.c_str(), usePass.length(),
+                (storedSsid.length() > 0) ? "NVS" : "DEFAULT");
   WiFi.begin(useSsid.c_str(), usePass.c_str());
-  Serial.print("Подключение к "); Serial.println(useSsid);
 }
 
 // Автомат состояний WiFi:
-// 1. При успешном подключении к роутеру (STA) гасим точку доступа (AP) и поднимаем mDNS.
-// 2. Если связи с роутером нет, поднимаем аварийную точку доступа (AP).
+// Режим только STA (подключение к хотспоту без постоянного зависания при потере сети)
+unsigned long lastWifiRetryMs = 0;
+
 void updateWifiStateMachine() {
-  if (WiFi.status() == WL_CONNECTED) {
-    if (wifiApActive) {
-      WiFi.softAPdisconnect(true);
-      WiFi.mode(WIFI_STA);
-      wifiApActive = false;
-      Serial.print("WiFi подключен: "); Serial.println(WiFi.localIP());
-    }
-    if (!mdnsStarted) {
-      if (MDNS.begin(MDNS_HOST)) {
-        MDNS.addService("http", "tcp", 80);
-        mdnsStarted = true;
-        Serial.printf("mDNS запущен: http://%s.local\n", MDNS_HOST);
-      }
-    }
-  } else {
-    // Не подключены к STA
-    if (!wifiApActive) {
-      if (wifiConnectStartMs == 0) wifiConnectStartMs = millis();
-      // Если прошло больше 7 секунд попытки подключения к роутеру — поднимаем AP
-      if (millis() - wifiConnectStartMs > 7000) {
-        Serial.println("Роутер недоступен. Запуск точки доступа (AP)...");
-        WiFi.mode(WIFI_AP_STA);
+  if (!wifiApActive) {
+    if (WiFi.status() != WL_CONNECTED && millis() - lastWifiRetryMs > 10000) {
+      lastWifiRetryMs = millis();
+      if (storedSsid.length() > 0) {
+        Serial.printf("WiFi Connect attempt: SSID='%s'\n", storedSsid.c_str());
+        WiFi.begin(storedSsid.c_str(), storedPass.c_str());
+      } else {
+        Serial.println("Нет сохраненной WiFi сети. Запуск точки доступа AP...");
+        WiFi.mode(WIFI_AP);
         WiFi.softAP(storedApSsid.c_str(), storedApPass.c_str());
         wifiApActive = true;
-        Serial.print("Точка доступа: "); Serial.println(storedApSsid);
-        Serial.print("IP адрес AP: "); Serial.println(WiFi.softAPIP());
+        #ifdef ENABLE_CAPTIVE_PORTAL
+        dnsServer.setErrorReplyCode(DNS_RCODE_NOERROR);
+        dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+        #endif
+      }
+    } else if (WiFi.status() == WL_CONNECTED) {
+      if (!mdnsStarted) {
+        if (MDNS.begin(MDNS_HOST)) {
+          MDNS.addService("http", "tcp", 80);
+          mdnsStarted = true;
+          Serial.printf("mDNS запущен: http://%s.local\n", MDNS_HOST);
+        }
       }
     }
   }
 }
 
 void setup() {
+  // Инициализация NVS для работы с настройками
+  esp_err_t err = nvs_flash_init();
+  if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND || err == ESP_ERR_NVS_NOT_FOUND) {
+      nvs_flash_erase();
+      err = nvs_flash_init();
+  }
+  if (err != ESP_OK) {
+      Serial.printf("NVS Init Error: 0x%x (%s)\n", err, esp_err_to_name(err));
+  }
   Serial.begin(115200);
-  Serial.println(F("--- OpenBike Controller v0.1.5-alpha ---"));
+  Serial.println(F("--- OpenBike Controller v0.1.6-alpha ---"));
 
   pinMode(BRAKE_PIN, INPUT_PULLUP);
   pinMode(PAS_SENSOR_PIN, INPUT_PULLUP);
@@ -1522,19 +1758,20 @@ void setup() {
 
   // Инициализация WiFi
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
   wifiCredsLoad();
   wifiConnectStartMs = millis();
   wifiConnect();
 
-  Serial.print("Подключение к WiFi");
+  Serial.print("Ожидание подключения к WiFi");
   unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 4000) {
-    delay(250); Serial.print(".");
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 8000) {
+    delay(300);
+    Serial.print(".");
   }
   Serial.println();
   if (WiFi.status() == WL_CONNECTED) {
-    WiFi.mode(WIFI_STA);
-    wifiApActive = false;
     Serial.print("Открой в браузере: http://"); Serial.println(WiFi.localIP());
     if (MDNS.begin(MDNS_HOST)) {
       MDNS.addService("http", "tcp", 80);
@@ -1542,19 +1779,13 @@ void setup() {
       Serial.printf("mDNS запущен: http://%s.local\n", MDNS_HOST);
     }
   } else {
-    // Если роутер сразу не ответил — поднимаем AP
-    Serial.println("WiFi не найден. Запускаю режим точки доступа (AP).");
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.softAP(storedApSsid.c_str(), storedApPass.c_str());
-    wifiApActive = true;
-    IPAddress apIP = WiFi.softAPIP();
-    Serial.print("Точка доступа: "); Serial.println(storedApSsid);
-    Serial.print("IP адрес AP: "); Serial.println(apIP);
+    Serial.printf("WiFi статус при старте: %d (1=NoSSID, 4=Failed, 6=WrongPass, 7=Disconnected)\n", WiFi.status());
   }
 
   cruiseSettingsLoad();
 
   server.on("/", handleHub);
+  server.on("/api/joystick/apply", HTTP_GET, handleApiJoystickApply);
   server.on("/api/pas/set_level", HTTP_GET, handleApiPasSetLevel);
   server.on("/api/pas/toggle_mode", HTTP_GET, handleApiPasToggleMode);
   server.on("/api/cruise/toggle", HTTP_GET, handleApiCruiseToggleMode);
@@ -1578,31 +1809,83 @@ server.on("/settings/cruise/save", HTTP_POST, handleCruiseSave);
   server.on("/update", HTTP_POST, handleUpdateResult, handleUpdateUpload);
   server.begin();
 
+  // Создаем высокоприоритетную задачу реального времени для газа/тормоза/PAS (Ядро 1, высокий приоритет)
+  xTaskCreatePinnedToCore(
+    criticalControlTask,
+    "CritCtrlTask",
+    4096,
+    NULL,
+    5, // Высокий приоритет (выше базовых и фоновых задач)
+    NULL,
+    1  // Ядро 1 (изолировано от системного WiFi на Core 0)
+  );
+
+  // Создаем фоновую задачу для веб-сервера и Wi-Fi (Ядро 0, низкий приоритет)
+  xTaskCreatePinnedToCore(
+    nonCriticalTask,
+    "NonCritTask",
+    4096,
+    NULL,
+    1, // Низкий приоритет
+    NULL,
+    0  // Ядро 0 (совместно с WiFi стеком ESP32)
+  );
+
   Serial.println("Готово. Упрощённый прототип запущен.");
 }
 
-void loop() {
-  unsigned long loopStart = micros();
-  
-  server.handleClient();
-  updateWifiStateMachine();
-  updatePasDetection();
-  updatePasButton();
-  updateThrottle();
-  updateLightButtons();
-  updateTurnSignals();
-  updateHorn();
-  updateBuzzer();
-  
-  cpuBusyTimeMicros += (micros() - loopStart);
-  
-  if (millis() - cpuMeasureStartMs >= 1000) {
-    cpuUsagePercent = (int)constrain((cpuBusyTimeMicros * 100ULL) / ((millis() - cpuMeasureStartMs) * 1000ULL), 0ULL, 100ULL);
-    cpuBusyTimeMicros = 0;
-    cpuMeasureStartMs = millis();
+void criticalControlTask(void *pvParameters) {
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  const TickType_t xFrequency = pdMS_TO_TICKS(1); // 1 kHz цикл управления
+
+  for (;;) {
+    unsigned long startMicros = micros();
+
+    // 1. Наивысший приоритет: Тормоз, Газ, PAS
+    updatePasDetection();
+    updatePasButton();
+    updateThrottle();
+
+    // 2. Вспомогательное управление освещением и звуком
+    updateLightButtons();
+    updateTurnSignals();
+    updateHorn();
+    updateBuzzer();
+
+    unsigned long elapsed = micros() - startMicros;
+    cpuBusyTimeMicros += elapsed;
+
+    if (millis() - cpuMeasureStartMs >= 1000) {
+      unsigned long totalElapsedMs = millis() - cpuMeasureStartMs;
+      if (totalElapsedMs > 0) {
+        cpuUsagePercent = (int)constrain((cpuBusyTimeMicros * 100ULL) / (totalElapsedMs * 1000ULL), 0ULL, 100ULL);
+      }
+      cpuBusyTimeMicros = 0;
+      cpuMeasureStartMs = millis();
+    }
+
+    // Точный интервал 1 мс без джиттера
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
   }
-  
-  delay(5);
+}
+
+void nonCriticalTask(void *pvParameters) {
+  for (;;) {
+    #ifdef ENABLE_CAPTIVE_PORTAL
+    if (wifiApActive) {
+      dnsServer.processNextRequest();
+    }
+    #endif
+
+    server.handleClient();
+    updateWifiStateMachine();
+    vTaskDelay(pdMS_TO_TICKS(1)); // 1 мс пауза для мгновенной обработки запросов
+  }
+}
+
+void loop() {
+  // Основной цикл свободен, управление разделено по RTOS-задачам
+  vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 // --- Cruise Control Module Implementation ---
@@ -1611,6 +1894,8 @@ void cruiseSettingsSave() {
   prefs.begin("cruise", false);
   prefs.putInt("cnt", cruiseLevelsCount);
   prefs.putBytes("pct", cruiseLevelPercent, sizeof(cruiseLevelPercent));
+  prefs.putFloat("stPct", cruiseStartPercent);
+  prefs.putFloat("endPct", cruiseEndPercent);
   prefs.putInt("ssEn", cruiseSoftStartEnabled ? 1 : 0);
   prefs.putInt("spEn", cruiseSoftStopEnabled ? 1 : 0);
   prefs.putULong("ssMs", cruiseSoftStartMs);
@@ -1620,12 +1905,12 @@ void cruiseSettingsSave() {
 }
 
 void cruiseSettingsLoad() {
-  prefs.begin("cruise", true);
+  prefs.begin("cruise", false);
   cruiseLevelsCount = prefs.getInt("cnt", 3);
   size_t got = prefs.getBytes("pct", cruiseLevelPercent, sizeof(cruiseLevelPercent));
   cruiseSoftStartEnabled = prefs.getInt("ssEn", 0) != 0;
   cruiseSoftStopEnabled = prefs.getInt("spEn", 0) != 0;
-  cruiseEnabled = prefs.getBool("cen", true); // Load cruiseEnabled state
+  cruiseEnabled = prefs.getBool("cen", false); // Load cruiseEnabled state
   cruiseSoftStartMs = prefs.getULong("ssMs", 500);
   cruiseSoftStopMs = prefs.getULong("spMs", 800);
   prefs.end();
@@ -1650,24 +1935,37 @@ button{margin-top:15px;padding:10px;width:100%;font-size:16px}
 .chk{display:flex;gap:8px;align-items:center;margin-top:12px}
 .chk input{width:auto}
 fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
+.flex-row{display:flex;gap:10px}
+.flex-row > div{flex:1}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
-<p><a href="/" style="color:#4a90d9">&larr; Настройки</a></p>
+<p><a href="/" style="color:#4a90d9">&larr; Главный экран</a></p>
 <h1>Cruise Control</h1>
 <form id="f">
-<fieldset><legend>Круиз-контроль</legend>
-<div class="chk"><input type="checkbox" name="cen" )rawliteral";
-  html += cruiseEnabled ? "checked" : "";
-  html += R"rawliteral(><label>Включить Cruise Control</label></div>
-</fieldset>
-<fieldset><legend>Настройки Cruise Control</legend>
-<label>Количество уровней</label>
-<input type="number" id="count" name="count" min="0" max="100" value=")rawliteral"; 
+<fieldset><legend>Настройки ступеней Cruise Control</legend>
+<label>Количество уровней (1-100)</label>
+<input type="number" id="count" name="count" min="1" max="100" value=")rawliteral"; 
   html += String(cruiseLevelsCount);
   html += R"rawliteral(" oninput="renderLevels()">
+
+<div class="flex-row">
+  <div>
+    <label>Начало диап. (%)</label>
+    <input type="number" id="stPct" name="stPct" step="0.1" min="0" max="100" value=")rawliteral";
+  html += String(cruiseStartPercent);
+  html += R"rawliteral(">
+  </div>
+  <div>
+    <label>Конец диап. (%)</label>
+    <input type="number" id="endPct" name="endPct" step="0.1" min="0" max="100" value=")rawliteral";
+  html += String(cruiseEndPercent);
+  html += R"rawliteral(">
+  </div>
+</div>
+
+<button type="button" onclick="autoDistribute()" style="background:#2c3e50;color:#fff;border:1px solid #34495e">Автораспределение (интерполяция)</button>
 <div id="levels"></div>
-<button type="button" onclick="autoDistribute()">Автораспределение</button>
 </fieldset>
 <fieldset><legend>Мягкий старт/стоп</legend>
 <div class="chk"><input type="checkbox" name="ssEn" )rawliteral";
@@ -1683,7 +1981,7 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
   html += String(cruiseSoftStopMs);
   html += R"rawliteral(">
 </fieldset>
-<button type="submit">Сохранить</button>
+<button type="submit" style="background:#27ae60;color:#fff;border:none;font-weight:bold">Сохранить</button>
 </form>
 <script>
 const saved = [)rawliteral";
@@ -1697,12 +1995,22 @@ function renderLevels(){
   const div = document.getElementById('levels'); div.innerHTML='';
   for(let i=0;i<count;i++){
     const val = saved[i]!==undefined?saved[i]:0;
-    div.innerHTML += '<label>Уровень '+(i+1)+' — значение (%)</label><input type="number" step="0.01" class="lvl-input" data-idx="'+i+'" value="'+val+'">';
+    div.innerHTML += '<label>Уровень '+(i+1)+' — цель (%)</label><input type="number" step="0.1" min="0" max="100" class="lvl-input" data-idx="'+i+'" value="'+val+'" onchange="saved['+i+']=parseFloat(this.value)||0">';
   }
 }
 function autoDistribute(){
   const count = parseInt(document.getElementById('count').value)||0;
-  for(let i=0;i<count;i++) saved[i]=Math.round((i+1)*10000/count)/100;
+  const st = parseFloat(document.getElementById('stPct').value)||0;
+  const end = parseFloat(document.getElementById('endPct').value)||100;
+  if(count <= 0) return;
+  if(count === 1){
+    saved[0] = Math.round(end * 10) / 10;
+  } else {
+    for(let i=0; i<count; i++){
+      const frac = i / (count - 1);
+      saved[i] = Math.round((st + frac * (end - st)) * 10) / 10;
+    }
+  }
   renderLevels();
 }
 renderLevels();
@@ -1725,11 +2033,13 @@ document.getElementById('f').addEventListener('submit',function(e){
 }
 
 void handleCruiseSave() {
-  cruiseEnabled = server.hasArg("cen");
   cruiseLevelsCount = server.arg("count").toInt();
   if (cruiseLevelsCount < 0) cruiseLevelsCount = 0;
   if (cruiseLevelsCount > CRUISE_MAX_LEVELS) cruiseLevelsCount = CRUISE_MAX_LEVELS;
   
+  if (server.hasArg("stPct")) cruiseStartPercent = server.arg("stPct").toFloat();
+  if (server.hasArg("endPct")) cruiseEndPercent = server.arg("endPct").toFloat();
+
   if (server.hasArg("levelsJson")) {
     String json = server.arg("levelsJson");
     int startIdx = json.indexOf('[');
@@ -1888,6 +2198,8 @@ void handleSettingsExport() {
   json += "},";
   json += "\"cruise\":{"; // New Cruise Control settings section
   json += "\"cnt\":" + String(cruiseLevelsCount) + ",";
+  json += "\"stPct\":" + String(cruiseStartPercent) + ",";
+  json += "\"endPct\":" + String(cruiseEndPercent) + ",";
   json += "\"pct\":[";
   for (int i = 0; i < cruiseLevelsCount; i++) {
     json += String(cruiseLevelPercent[i]);
@@ -1916,43 +2228,58 @@ void handleSettingsImport() {
   int idx = fileContent.indexOf("\"throttle\":{");
   if (idx != -1) {
     String throttleJson = fileContent.substring(fileContent.indexOf('{', idx) + 1, fileContent.indexOf('}', idx));
-    if (throttleJson.indexOf("\"inMinV\":") != -1)
-      throttleInMinV = throttleJson.substring(throttleJson.indexOf("\"inMinV\":") + 9, throttleJson.indexOf(',', throttleJson.indexOf("\"inMinV\":"))).toFloat();
-    if (throttleJson.indexOf("\"inMaxV\":") != -1)
-      throttleInMaxV = throttleJson.substring(throttleJson.indexOf("\"inMaxV\":") + 9, throttleJson.indexOf(',', throttleJson.indexOf("\"inMaxV\":"))).toFloat();
-    if (throttleJson.indexOf("\"outMinV\":") != -1)
-      throttleOutMinV = throttleJson.substring(throttleJson.indexOf("\"outMinV\":") + 10, throttleJson.indexOf(',', throttleJson.indexOf("\"outMinV\":"))).toFloat();
-    if (throttleJson.indexOf("\"outMaxV\":") != -1)
-      throttleOutMaxV = throttleJson.substring(throttleJson.indexOf("\"outMaxV\":") + 10, throttleJson.indexOf(',', throttleJson.indexOf("\"outMaxV\":"))).toFloat();
-    if (throttleJson.indexOf("\"divRatio\":") != -1)
-      throttleInputDividerRatio = throttleJson.substring(throttleJson.indexOf("\"divRatio\":") + 11, throttleJson.indexOf(',', throttleJson.indexOf("\"divRatio\":"))).toFloat();
-    if (throttleJson.indexOf("\"gain\":") != -1)
-      throttleOutputGain = throttleJson.substring(throttleJson.indexOf("\"gain\":") + 7, throttleJson.indexOf(',', throttleJson.indexOf("\"gain\":"))).toFloat();
-    if (throttleJson.indexOf("\"ssEn\":") != -1)
-      throttleSoftStartEnabled = throttleJson.substring(throttleJson.indexOf("\"ssEn\":") + 7, throttleJson.indexOf(',', throttleJson.indexOf("\"ssEn\":"))).toInt() != 0;
-    if (throttleJson.indexOf("\"spEn\":") != -1)
-      throttleSoftStopEnabled = throttleJson.substring(throttleJson.indexOf("\"spEn\":") + 7, throttleJson.indexOf(',', throttleJson.indexOf("\"spEn\":"))).toInt() != 0;
-    if (throttleJson.indexOf("\"ssMs\":") != -1)
-      throttleSoftStartMs = throttleJson.substring(throttleJson.indexOf("\"ssMs\":") + 7, throttleJson.indexOf(',', throttleJson.indexOf("\"ssMs\":"))).toInt();
-    if (throttleJson.indexOf("\"spMs\":") != -1)
-      throttleSoftStopMs = throttleJson.substring(throttleJson.indexOf("\"spMs\":") + 7, throttleJson.indexOf(',', throttleJson.indexOf("\"spMs\":"))).toInt();
-    if (throttleJson.indexOf("\"brakeCut\":") != -1) {
-      int bcIdx = throttleJson.indexOf("\"brakeCut\":") + 11;
-      int bcEnd = throttleJson.indexOf(',', bcIdx);
-      if (bcEnd == -1) bcEnd = throttleJson.length();
-      ownBrakeCutoffEnabled = throttleJson.substring(bcIdx, bcEnd).toInt() != 0;
+    int inMinVPos = throttleJson.indexOf("\"inMinV\":");
+    if (inMinVPos != -1)
+      throttleInMinV = throttleJson.substring(inMinVPos + 9, throttleJson.indexOf(',', inMinVPos)).toFloat();
+    int inMaxVPos = throttleJson.indexOf("\"inMaxV\":");
+    if (inMaxVPos != -1)
+      throttleInMaxV = throttleJson.substring(inMaxVPos + 9, throttleJson.indexOf(',', inMaxVPos)).toFloat();
+    int outMinVPos = throttleJson.indexOf("\"outMinV\":");
+    if (outMinVPos != -1)
+      throttleOutMinV = throttleJson.substring(outMinVPos + 10, throttleJson.indexOf(',', outMinVPos)).toFloat();
+    int outMaxVPos = throttleJson.indexOf("\"outMaxV\":");
+    if (outMaxVPos != -1)
+      throttleOutMaxV = throttleJson.substring(outMaxVPos + 10, throttleJson.indexOf(',', outMaxVPos)).toFloat();
+    int divRatioPos = throttleJson.indexOf("\"divRatio\":");
+    if (divRatioPos != -1)
+      throttleInputDividerRatio = throttleJson.substring(divRatioPos + 11, throttleJson.indexOf(',', divRatioPos)).toFloat();
+    int gainPos = throttleJson.indexOf("\"gain\":");
+    if (gainPos != -1)
+      throttleOutputGain = throttleJson.substring(gainPos + 7, throttleJson.indexOf(',', gainPos)).toFloat();
+    int ssEnPos = throttleJson.indexOf("\"ssEn\":");
+    if (ssEnPos != -1)
+      throttleSoftStartEnabled = throttleJson.substring(ssEnPos + 7, throttleJson.indexOf(',', ssEnPos)).toInt() != 0;
+    int spEnPos = throttleJson.indexOf("\"spEn\":");
+    if (spEnPos != -1)
+      throttleSoftStopEnabled = throttleJson.substring(spEnPos + 7, throttleJson.indexOf(',', spEnPos)).toInt() != 0;
+    int ssMsPos = throttleJson.indexOf("\"ssMs\":");
+    if (ssMsPos != -1)
+      throttleSoftStartMs = throttleJson.substring(ssMsPos + 7, throttleJson.indexOf(',', ssMsPos)).toInt();
+    int spMsPos = throttleJson.indexOf("\"spMs\":");
+    if (spMsPos != -1)
+      throttleSoftStopMs = throttleJson.substring(spMsPos + 7, throttleJson.indexOf(',', spMsPos)).toInt();
+    int brakeCutPos = throttleJson.indexOf("\"brakeCut\":");
+    if (brakeCutPos != -1) {
+      int bcIdx = throttleJson.indexOf('{', brakeCutPos) + 1;
+      int bcEnd = throttleJson.indexOf('}', bcIdx);
+      if (bcEnd != -1) {
+        ownBrakeCutoffEnabled = throttleJson.substring(bcIdx, bcEnd).toInt() != 0;
+      }
     }
     throttleSettingsSave();
   }
   idx = fileContent.indexOf("\"pas\":{");
   if (idx != -1) {
     String pasJson = fileContent.substring(fileContent.indexOf('{', idx) + 1, fileContent.indexOf('}', idx));
-    if (pasJson.indexOf("\"magnets\":") != -1)
-      pasMagnetCount = pasJson.substring(pasJson.indexOf("\"magnets\":") + 10, pasJson.indexOf(',', pasJson.indexOf("\"magnets\":"))).toInt();
-    if (pasJson.indexOf("\"edge\":") != -1)
-      pasEdgeMode = pasJson.substring(pasJson.indexOf("\"edge\":") + 7, pasJson.indexOf(',', pasJson.indexOf("\"edge\":"))).toInt();
-    if (pasJson.indexOf("\"angle\":") != -1)
-      pasActivationAngle = pasJson.substring(pasJson.indexOf("\"angle\":") + 8, pasJson.indexOf(',', pasJson.indexOf("\"angle\":"))).toInt();
+    int magnetsPos = pasJson.indexOf("\"magnets\":");
+    if (magnetsPos != -1)
+      pasMagnetCount = pasJson.substring(magnetsPos + 10, pasJson.indexOf(',', magnetsPos)).toInt();
+    int edgePos = pasJson.indexOf("\"edge\":");
+    if (edgePos != -1)
+      pasEdgeMode = pasJson.substring(edgePos + 7, pasJson.indexOf(',', edgePos)).toInt();
+    int anglePos = pasJson.indexOf("\"angle\":");
+    if (anglePos != -1)
+      pasActivationAngle = pasJson.substring(anglePos + 8, pasJson.indexOf(',', anglePos)).toInt();
     if (pasJson.indexOf("\"timeout\":") != -1)
       pasTimeoutMs = pasJson.substring(pasJson.indexOf("\"timeout\":") + 10, pasJson.indexOf(',', pasJson.indexOf("\"timeout\":"))).toInt();
     if (pasJson.indexOf("\"cnt\":") != -1)
@@ -1990,9 +2317,12 @@ void handleSettingsImport() {
     int ssidPos = wifiJson.indexOf("\"ssid\":\"");
     if (ssidPos != -1) {
       String importedSsid = wifiJson.substring(ssidPos + 8);
-      importedSsid = importedSsid.substring(0, importedSsid.indexOf("\""));
-      if (importedSsid.length() > 0) {
-        wifiCredsSave(importedSsid, "");
+      int commaPos = importedSsid.indexOf("\",");
+      if (commaPos != -1) {
+        importedSsid = importedSsid.substring(0, commaPos);
+        if (importedSsid.length() > 0) {
+          wifiCredsSave(importedSsid, "");
+        }
       }
     }
   }
@@ -2004,17 +2334,23 @@ void handleSettingsImport() {
     int apSsidPos = apJson.indexOf("\"ssid\":\"");
     if (apSsidPos != -1) {
       String importedApSsid = apJson.substring(apSsidPos + 8);
-      importedApSsid = importedApSsid.substring(0, importedApSsid.indexOf("\""));
-      if (importedApSsid.length() > 0) {
-        storedApSsid = importedApSsid;
-        storedApPass = ""; // Clear pass if SSID is changed
-        int apPassPos = apJson.indexOf("\"pass\":\"");
-        if (apPassPos != -1) {
-          String importedApPass = apJson.substring(apPassPos + 8);
-          importedApPass = importedApPass.substring(0, importedApPass.indexOf("\""));
-          storedApPass = importedApPass;
+      int commaPos = importedApSsid.indexOf("\",");
+      if (commaPos != -1) {
+        importedApSsid = importedApSsid.substring(0, commaPos);
+        if (importedApSsid.length() > 0) {
+          storedApSsid = importedApSsid;
+          storedApPass = ""; // Clear pass if SSID is changed
+          int apPassPos = apJson.indexOf("\"pass\":\"");
+          if (apPassPos != -1) {
+            String importedApPass = apJson.substring(apPassPos + 8);
+            commaPos = importedApPass.indexOf("\",");
+            if (commaPos != -1) {
+              importedApPass = importedApPass.substring(0, commaPos);
+              storedApPass = importedApPass;
+            }
+          }
+          apSettingsSave(); // Save AP settings
         }
-        apSettingsSave(); // Save AP settings
       }
     }
   }
@@ -2023,28 +2359,38 @@ void handleSettingsImport() {
   idx = fileContent.indexOf("\"cruise\":{");
   if (idx != -1) {
     String cruiseJson = fileContent.substring(fileContent.indexOf('{', idx) + 1, fileContent.indexOf('}', idx));
-    if (cruiseJson.indexOf("\"cnt\":") != -1) cruiseLevelsCount = cruiseJson.substring(cruiseJson.indexOf("\"cnt\":") + 6, cruiseJson.indexOf(',', cruiseJson.indexOf("\"cnt\":"))).toInt();
-    if (cruiseJson.indexOf("\"ssEn\":") != -1) cruiseSoftStartEnabled = cruiseJson.substring(cruiseJson.indexOf("\"ssEn\":") + 7, cruiseJson.indexOf(',', cruiseJson.indexOf("\"ssEn\":"))).toInt() != 0;
-    if (cruiseJson.indexOf("\"spEn\":") != -1) cruiseSoftStopEnabled = cruiseJson.substring(cruiseJson.indexOf("\"spEn\":") + 7, cruiseJson.indexOf(',', cruiseJson.indexOf("\"spEn\":"))).toInt() != 0;
-    if (cruiseJson.indexOf("\"ssMs\":") != -1) cruiseSoftStartMs = cruiseJson.substring(cruiseJson.indexOf("\"ssMs\":") + 7, cruiseJson.indexOf(',', cruiseJson.indexOf("\"ssMs\":"))).toInt();
-    if (cruiseJson.indexOf("\"spMs\":") != -1) cruiseSoftStopMs = cruiseJson.substring(cruiseJson.indexOf("\"spMs\":") + 7, cruiseJson.indexOf(',', cruiseJson.indexOf("\"spMs\":"))).toInt();
+    int cntPos = cruiseJson.indexOf("\"cnt\":");
+    if (cntPos != -1) cruiseLevelsCount = cruiseJson.substring(cntPos + 6, cruiseJson.indexOf(',', cntPos)).toInt();
+    int stPctPos = cruiseJson.indexOf("\"stPct\":");
+    if (stPctPos != -1) cruiseStartPercent = cruiseJson.substring(stPctPos + 8, cruiseJson.indexOf(',', stPctPos)).toFloat();
+    int endPctPos = cruiseJson.indexOf("\"endPct\":");
+    if (endPctPos != -1) cruiseEndPercent = cruiseJson.substring(endPctPos + 9, cruiseJson.indexOf(',', endPctPos)).toFloat();
+    int ssEnPos = cruiseJson.indexOf("\"ssEn\":");
+    if (ssEnPos != -1) cruiseSoftStartEnabled = cruiseJson.substring(ssEnPos + 7, cruiseJson.indexOf(',', ssEnPos)).toInt() != 0;
+    int spEnPos = cruiseJson.indexOf("\"spEn\":");
+    if (spEnPos != -1) cruiseSoftStopEnabled = cruiseJson.substring(spEnPos + 7, cruiseJson.indexOf(',', spEnPos)).toInt() != 0;
+    int ssMsPos = cruiseJson.indexOf("\"ssMs\":");
+    if (ssMsPos != -1) cruiseSoftStartMs = cruiseJson.substring(ssMsPos + 7, cruiseJson.indexOf(',', ssMsPos)).toInt();
+    int spMsPos = cruiseJson.indexOf("\"spMs\":");
+    if (spMsPos != -1) cruiseSoftStopMs = cruiseJson.substring(spMsPos + 7, cruiseJson.indexOf(',', spMsPos)).toInt();
     
-    int pctStart = cruiseJson.indexOf("\"pct\":[");
-    if (pctStart != -1) {
-      pctStart += 7;
-      int pctEnd = cruiseJson.indexOf("]", pctStart);
-      String pctJson = cruiseJson.substring(pctStart, pctEnd);
-      int currentPct = 0;
-      int commaPos = -1;
-      for (int i = 0; i < cruiseLevelsCount; i++) {
-        commaPos = pctJson.indexOf(',', currentPct);
-        if (commaPos == -1) commaPos = pctJson.length();
-        cruiseLevelPercent[i] = pctJson.substring(currentPct, commaPos).toFloat();
-        currentPct = commaPos + 1;
+      int pctStart = cruiseJson.indexOf("\"pct\":[");
+      if (pctStart != -1) {
+        pctStart += 7;
+        int pctEnd = cruiseJson.indexOf("]", pctStart);
+        if (pctEnd != -1) {
+          String pctJson = cruiseJson.substring(pctStart, pctEnd);
+          int currentPct = 0;
+          int commaPos = -1;
+          for (int i = 0; i < cruiseLevelsCount; i++) {
+            commaPos = pctJson.indexOf(',', currentPct);
+            if (commaPos == -1) commaPos = pctJson.length();
+            cruiseLevelPercent[i] = pctJson.substring(currentPct, commaPos).toFloat();
+            currentPct = commaPos + 1;
+          }
+        }
       }
-    }
     cruiseSettingsSave();
-    cruiseAutoDistribute(); // Recalculate levels if count changed or for safety
   }
 
   server.send(200, "text/plain", "Настройки успешно импортированы. Перезагрузка...");
