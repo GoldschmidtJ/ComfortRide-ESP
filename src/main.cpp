@@ -691,7 +691,16 @@ String getTopBarHtml() {
 String getTopBarJs() {
   return String(R"rawliteral(
 <script>
+let statusErrCount = 0;
 function updateSysStatus(){
+  if (localStorage.getItem('ui_show_topbar') === 'false') {
+    const tb = document.querySelector('.top-bar-sticky');
+    if (tb) tb.style.display = 'none';
+  } else {
+    const tb = document.querySelector('.top-bar-sticky');
+    if (tb) tb.style.display = 'flex';
+  }
+
   fetch("/status/sys").then(r=>r.json()).then(d=>{
     const cpuEl = document.getElementById("tbCpu");
     if(cpuEl) cpuEl.innerText = (d.cpu || 0) + "%";
@@ -727,25 +736,27 @@ function updateSysStatus(){
     const tempEl = document.getElementById("tbTemp");
     if(tempEl && d.temp !== undefined) {
       tempEl.innerText = d.temp + "°C";
-      // Optional: Add styling based on temperature
-      if (d.temp > 75) { // Example threshold for overheating
-        tempEl.style.color = "#e74c3c"; // Red for high temperature
+      if (d.temp > 75) {
+        tempEl.style.color = "#e74c3c";
       } else if (d.temp > 60) {
-        tempEl.style.color = "#f39c12"; // Orange for warning
+        tempEl.style.color = "#f39c12";
       } else {
-        tempEl.style.color = "#eee"; // Default color
+        tempEl.style.color = "#eee";
       }
     } else if (tempEl) {
-      tempEl.innerText = "--°C"; // Show fallback if temp is not available
+      tempEl.innerText = "--°C";
     }
 
+    statusErrCount = 0;
   }).catch(e=>{
-    // Handle fetch errors, perhaps by showing error indicators
-    console.error("Error updating system status:", e);
-    document.getElementById("tbCpu")?.innerText = "ERR";
-    document.getElementById("tbRam")?.innerText = "ERR";
-    document.getElementById("tbTemp")?.innerText = "ERR";
-    document.getElementById("tbWifiTxt")?.innerText = "ERR";
+    statusErrCount++;
+    const cpu = document.getElementById("tbCpu"); if(cpu) cpu.innerText = "ERR";
+    const ram = document.getElementById("tbRam"); if(ram) ram.innerText = "ERR";
+    const temp = document.getElementById("tbTemp"); if(temp) temp.innerText = "ERR";
+    const wifi = document.getElementById("tbWifiTxt"); if(wifi) wifi.innerText = "ERR";
+    if (statusErrCount >= 3) {
+      location.reload();
+    }
   });
 }
 setInterval(updateSysStatus, 2000);
@@ -1164,6 +1175,8 @@ let draftPasLvl = activePasLvl;
 let draftCruiseLvl = activeCruiseLvl;
 let isDirty = false;
 let userInteractingUntil = 0;
+let applyInProgressUntil = 0;
+let simCruiseEngaged = false;
 
 function vib() { if (navigator.vibrate) navigator.vibrate(30); }
 
@@ -1237,40 +1250,87 @@ document.getElementById("btnDown").addEventListener("click", () => {
 document.getElementById("btnOk").addEventListener("click", () => {
   vib();
   if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
-  userInteractingUntil = Date.now() + 2000;
   let targetMode = draftMode;
   let targetLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
 
-  activeMode = targetMode;
-  if (targetMode === "pas") { activePasLvl = targetLvl; activeCruiseLvl = 0; }
-  else if (targetMode === "cruise") { activeCruiseLvl = targetLvl; activePasLvl = 0; }
-  else { activePasLvl = 0; activeCruiseLvl = 0; }
+  if (targetLvl === 0) {
+    activeMode = "off";
+    activePasLvl = 0;
+    activeCruiseLvl = 0;
+  } else {
+    activeMode = targetMode;
+    if (targetMode === "pas") {
+      activePasLvl = targetLvl;
+      activeCruiseLvl = 0;
+    } else if (targetMode === "cruise") {
+      activeCruiseLvl = targetLvl;
+      activePasLvl = 0;
+    }
+  }
 
+  if (targetMode === "cruise" && targetLvl > 0) {
+    simCruiseEngaged = false;
+  }
+
+  draftMode = (activeMode === "off") ? targetMode : activeMode;
+  draftPasLvl = activePasLvl;
+  draftCruiseLvl = activeCruiseLvl;
+  applyInProgressUntil = Date.now() + 1500;
   renderJoystick();
-  fetch("/api/joystick/apply?mode=" + targetMode + "&level=" + targetLvl).catch(()=>{});
+
+  fetch("/api/joystick/apply?mode=" + encodeURIComponent(targetMode) + "&level=" + targetLvl)
+    .then(res => {
+      if (res.ok) {
+        setTimeout(refreshHubData, 200);
+      }
+    })
+    .catch(err => {
+      console.warn("Apply mode error:", err);
+    });
+
+  setTimeout(refreshHubData, 500);
+});
+
+function refreshHubData(forceSync = false) {
+  if (!forceSync && (isDirty || Date.now() < applyInProgressUntil)) return;
+  fetch("/status/sys")
+    .then(r => r.json())
+    .then(d => {
+      let serverMode = d.pas_en ? "pas" : (d.cruise_en ? "cruise" : "off");
+      let serverPasLvl = d.pas_lvl || 0;
+      let serverCruiseLvl = d.cruise_lvl || 0;
+      if (serverMode !== activeMode || serverPasLvl !== activePasLvl || serverCruiseLvl !== activeCruiseLvl) {
+        activeMode = serverMode;
+        activePasLvl = serverPasLvl;
+        activeCruiseLvl = serverCruiseLvl;
+        if (!isDirty || forceSync) {
+          draftMode = (activeMode === "off") ? "pas" : activeMode;
+          draftPasLvl = activePasLvl;
+          draftCruiseLvl = activeCruiseLvl;
+          if (forceSync) isDirty = false;
+        }
+        renderJoystick();
+      }
+    })
+    .catch(() => {});
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    applyInProgressUntil = 0;
+    refreshHubData(true);
+    if (typeof updateSysStatus === "function") updateSysStatus();
+  }
+});
+
+window.addEventListener("focus", () => {
+  applyInProgressUntil = 0;
+  refreshHubData(true);
+  if (typeof updateSysStatus === "function") updateSysStatus();
 });
 
 renderJoystick();
-
-setInterval(() => {
-  if (Date.now() < userInteractingUntil) return;
-  fetch("/status/sys").then(r=>r.json()).then(d => {
-    let serverMode = d.pas_en ? "pas" : (d.cruise_en ? "cruise" : "off");
-    let serverPasLvl = d.pas_lvl || 0;
-    let serverCruiseLvl = d.cruise_lvl || 0;
-    if (serverMode !== activeMode || serverPasLvl !== activePasLvl || serverCruiseLvl !== activeCruiseLvl) {
-      activeMode = serverMode;
-      activePasLvl = serverPasLvl;
-      activeCruiseLvl = serverCruiseLvl;
-      if (!isDirty) {
-        draftMode = (activeMode === "off") ? "pas" : activeMode;
-        draftPasLvl = activePasLvl;
-        draftCruiseLvl = activeCruiseLvl;
-      }
-      renderJoystick();
-    }
-  }).catch(()=>{});
-}, 1500);
+setInterval(refreshHubData, 1500);
 </script>
 </body>
 </html>)rawliteral";
@@ -2100,16 +2160,37 @@ a.back{color:#4a90d9;text-decoration:none;display:inline-block;margin-top:20px;}
 
 <p><a class="back" href="/">&larr; Меню</a></p>
 <h1>Система</h1>
+<div style="background:#222;border:1px solid #333;border-radius:8px;padding:12px;margin-bottom:15px">
+  <div style="font-weight:bold;margin-bottom:8px;color:#4a90d9">Интерфейс</div>
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+    <input type="checkbox" id="chkShowTopbar" onchange="toggleTopbar(this.checked)" style="width:auto;cursor:pointer">
+    <span>Показывать верхнюю панель статуса (Top Bar)</span>
+  </label>
+</div>
 <a class="card" href="/update">Обновить прошивку (.bin) &rarr;</a>
 <a class="card" href="#" onclick="exportSettings(); return false;">Экспортировать настройки (.json) &rarr;</a>
 <form id="importForm" enctype="multipart/form-data" method="post" action="/system/import" style="margin-top:10px">
   <label for="settingsFile" class="card">Импортировать настройки (.json) &rarr;</label>
   <input type="file" id="settingsFile" name="settingsFile" accept=".json" onchange="importSettings(this)" style="display:none;">
 </form>
-  <input type="file" id="settingsFile" name="settingsFile" accept=".json" onchange="importSettings(this)" style="display:none;">
-</form>
 
 <script>
+document.addEventListener("DOMContentLoaded", () => {
+  const chk = document.getElementById("chkShowTopbar");
+  if (chk) {
+    chk.checked = localStorage.getItem("ui_show_topbar") !== "false";
+  }
+});
+
+function toggleTopbar(show) {
+  localStorage.setItem("ui_show_topbar", show ? "true" : "false");
+  if (typeof updateSysStatus === "function") {
+    updateSysStatus();
+  } else {
+    const tb = document.querySelector(".top-bar-sticky");
+    if (tb) tb.style.display = show ? "flex" : "none";
+  }
+}
 function exportSettings() {
   fetch('/system/export').then(r => {
     if (!r.ok) throw new Error('Export failed');
