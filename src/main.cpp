@@ -107,6 +107,8 @@ extern int pasLevelsCount;
 extern bool cruiseEnabled;
 extern int cruiseCurrentLevel;
 extern int cruiseLevelsCount;
+extern bool cruiseEngaged;
+
 
 // ================= System status tracking ================
 unsigned long cpuMeasureStartMs = 0;
@@ -152,6 +154,7 @@ void handleSystemStatus() {
   json += "\"pas_lvl\":" + String(pasCurrentLevel) + ",";
   json += "\"pas_cnt\":" + String(pasLevelsCount) + ",";
   json += "\"cruise_en\":" + String(cruiseEnabled ? "true" : "false") + ",";
+  json += "\"cruise_engaged\":" + String(cruiseEngaged ? "true" : "false") + ",";
   json += "\"cruise_lvl\":" + String(cruiseCurrentLevel) + ",";
   json += "\"cruise_cnt\":" + String(cruiseLevelsCount) + ",";
   json += "\"bt_active\":false,"; // Assuming this is a boolean
@@ -219,6 +222,19 @@ bool cruiseSoftStopEnabled = false;
 unsigned long cruiseSoftStartMs = 500;
 unsigned long cruiseSoftStopMs = 800;
 
+// Состояние круиз-контроля для конечного автомата
+bool cruiseEngaged = false;         // Выдаётся ли тяга круиза на мотор
+bool cruisePendingResume = false;   // Ожидает ли возобновления (уровень сохранён, но тяга отключена)
+bool cruiseConfirmRequired = false; // Требуется ли подтверждение через газ для включения тяги
+bool cruiseReleaseSeen = true;      // Защита: был ли газ отпущен перед новым нажатием для подтверждения
+
+void armCruisePending(bool confirmRequired, float throttlePct) {
+  cruiseEngaged = false;
+  cruisePendingResume = true;
+  cruiseConfirmRequired = confirmRequired;
+  cruiseReleaseSeen = (throttlePct <= 10.0f);
+}
+
 float cruiseSmoothOutV = 0;
 unsigned long cruiseSmoothLastMs = 0;
 
@@ -255,7 +271,7 @@ float applyCruiseSmoothing(float targetV) {
 }
 
 float getCruiseTargetV() {
-  if (!cruiseEnabled) return 0;
+  if (!cruiseEnabled || !cruiseEngaged) return 0;
   if (cruiseCurrentLevel <= 0 || cruiseCurrentLevel > cruiseLevelsCount) return 0;
   float pct = cruiseLevelPercent[cruiseCurrentLevel - 1];
   float outMin = throttleOutMinV;
@@ -467,6 +483,9 @@ void updatePasButton() {
         pasEnabled = (pasCurrentLevel > 0);
         if (pasEnabled) {
           cruiseEnabled = false; // Отключаем круиз при физическом переключении PAS
+          cruiseCurrentLevel = 0;
+          cruiseEngaged = false;
+          cruisePendingResume = false;
         }
         Serial.printf("PAS уровень: %d/%d\n", pasCurrentLevel, pasLevelsCount);
       }
@@ -606,14 +625,7 @@ void setThrottleOutputSafeZero() {
 }
 
 void updateThrottle() {
-  if (ownBrakeCutoffEnabled && isBrakePressed()) {
-    setThrottleOutputSafeZero();
-    throttleSmoothOutV = 0;
-    pasSmoothOutV = 0;
-    cruiseSmoothOutV = 0;
-    updateDebugBuffer(0, 0);
-    return;
-  }
+  bool brakePressed = ownBrakeCutoffEnabled && isBrakePressed();
 
   int raw = analogRead(THROTTLE_ADC_PIN);
   float adcPinV = raw * HW_MAX_VOLTAGE / 4095.0f;
@@ -623,6 +635,73 @@ void updateThrottle() {
 
   float throttleTargetV = calibrateThrottleV(realGripV); // целевое напряжение на проводе К КОНТРОЛЛЕРУ
   float throttleOutV = applyThrottleSmoothing(throttleTargetV);
+
+  // Расчет процента нажатия ручки газа (0-100%) для конечного автомата круиза
+  float throttleSpan = (throttleInMaxV - throttleInMinV);
+  float throttlePct = 0.0f;
+  if (throttleSpan > 0.05f) {
+    throttlePct = ((realGripV - throttleInMinV) / throttleSpan) * 100.0f;
+  }
+  if (throttlePct < 0.0f) throttlePct = 0.0f;
+  if (throttlePct > 100.0f) throttlePct = 100.0f;
+
+  // Конечный автомат круиз-контроля (State Machine)
+  if (cruiseEnabled && cruiseCurrentLevel > 0) {
+    if (brakePressed) {
+      // Тормоз активен: переход в pending режим или сброс в зависимости от настроек
+      if (cruiseEngaged || !cruisePendingResume) {
+        if (cruiseAfterBrakingMode == 0) {
+          cruiseEnabled = false;
+          cruiseCurrentLevel = 0;
+          cruiseEngaged = false;
+          cruisePendingResume = false;
+        } else if (cruiseAfterBrakingMode == 1) {
+          armCruisePending(true, throttlePct);
+        } else if (cruiseAfterBrakingMode == 2) {
+          armCruisePending(false, throttlePct);
+        }
+      }
+    } else {
+      // Тормоз отпущен: обработка перегазовки и возобновления
+      if (cruiseEngaged && throttlePct > 10.0f) {
+        // Перегазовка: ручка газа нажата выше порога во время активного круиза
+        if (cruiseAfterThrottleMode == 0) {
+          cruiseEnabled = false;
+          cruiseCurrentLevel = 0;
+          cruiseEngaged = false;
+          cruisePendingResume = false;
+        } else if (cruiseAfterThrottleMode == 1) {
+          armCruisePending(true, throttlePct);
+        } else if (cruiseAfterThrottleMode == 2) {
+          armCruisePending(false, throttlePct);
+        }
+      } else if (!cruiseEngaged && cruisePendingResume) {
+        if (cruiseConfirmRequired) {
+          if (throttlePct <= 10.0f) {
+            cruiseReleaseSeen = true;
+          } else if (cruiseReleaseSeen && throttlePct > 10.0f) {
+            cruiseEngaged = true;
+            cruisePendingResume = false;
+          }
+        } else {
+          // Авто-возобновление: как только газ отпущен ниже порога, включаем круиз обратно
+          if (throttlePct <= 10.0f) {
+            cruiseEngaged = true;
+            cruisePendingResume = false;
+          }
+        }
+      }
+    }
+  }
+
+  if (brakePressed) {
+    setThrottleOutputSafeZero();
+    throttleSmoothOutV = 0;
+    pasSmoothOutV = 0;
+    cruiseSmoothOutV = 0;
+    updateDebugBuffer(0, 0);
+    return;
+  }
 
   float pasTargetV = getPasTargetV();
   float pasOutV = applyPasSmoothing(pasTargetV);
@@ -1871,6 +1950,8 @@ void handleApiJoystickApply() {
       if (pasEnabled) {
         cruiseEnabled = false; // Взаимное исключение
         cruiseCurrentLevel = 0;
+        cruiseEngaged = false;
+        cruisePendingResume = false;
       }
       server.send(200, "text/plain", "OK");
       return;
@@ -1882,6 +1963,15 @@ void handleApiJoystickApply() {
       if (cruiseEnabled) {
         pasEnabled = false; // Взаимное исключение
         pasCurrentLevel = 0;
+        if (cruiseConfirmThrottleAfterStart) {
+          armCruisePending(true, 0.0f);
+        } else {
+          cruiseEngaged = true;
+          cruisePendingResume = false;
+        }
+      } else {
+        cruiseEngaged = false;
+        cruisePendingResume = false;
       }
       server.send(200, "text/plain", "OK");
       return;
@@ -1891,6 +1981,8 @@ void handleApiJoystickApply() {
     pasCurrentLevel = 0;
     cruiseEnabled = false;
     cruiseCurrentLevel = 0;
+    cruiseEngaged = false;
+    cruisePendingResume = false;
     server.send(200, "text/plain", "OK");
     return;
   }
@@ -1906,6 +1998,9 @@ void handleApiPasSetLevel() {
       // Взаимное исключение: если PAS включен, круиз отключается
       if (pasEnabled) {
         cruiseEnabled = false;
+        cruiseCurrentLevel = 0;
+        cruiseEngaged = false;
+        cruisePendingResume = false;
       }
       server.send(200, "text/plain", "OK");
       return;
@@ -1922,6 +2017,9 @@ void handleApiPasToggleMode() {
     if (pasCurrentLevel == 0) pasCurrentLevel = 1;
     // Взаимное исключение: если PAS включен, круиз отключается
     cruiseEnabled = false;
+    cruiseCurrentLevel = 0;
+    cruiseEngaged = false;
+    cruisePendingResume = false;
   }
   server.send(200, "text/plain", "OK");
 }
@@ -1932,6 +2030,17 @@ void handleApiCruiseToggleMode() {
   if (cruiseEnabled) {
     pasEnabled = false;
     pasCurrentLevel = 0;
+    if (cruiseCurrentLevel == 0) cruiseCurrentLevel = 1;
+    if (cruiseConfirmThrottleAfterStart) {
+      armCruisePending(true, 0.0f);
+    } else {
+      cruiseEngaged = true;
+      cruisePendingResume = false;
+    }
+  } else {
+    cruiseCurrentLevel = 0;
+    cruiseEngaged = false;
+    cruisePendingResume = false;
   }
   server.send(200, "text/plain", "OK");
 }
