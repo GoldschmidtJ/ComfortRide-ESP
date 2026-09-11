@@ -1897,6 +1897,12 @@ function refreshHubData(forceSync = false) {
       let serverMode = d.pas_en ? "pas" : (d.cruise_en ? "cruise" : "off");
       let serverPasLvl = d.pas_lvl || 0;
       let serverCruiseLvl = d.cruise_lvl || 0;
+      let serverCruiseEngaged = (d.cruise_engaged !== undefined) ? d.cruise_engaged : (serverMode === "cruise" && serverCruiseLvl > 0);
+
+      if (serverMode === "cruise" && activeMode === "cruise") {
+        simCruiseEngaged = serverCruiseEngaged;
+      }
+
       if (serverMode !== activeMode || serverPasLvl !== activePasLvl || serverCruiseLvl !== activeCruiseLvl) {
         activeMode = serverMode;
         activePasLvl = serverPasLvl;
