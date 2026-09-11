@@ -211,6 +211,9 @@ bool cruiseEnabled = false; // Cruise control выключен по умолча
 int cruiseCurrentLevel = 0; // 0 = выключен
 float cruiseStartPercent = 20.0f; // Начальное значение для автораспределения
 float cruiseEndPercent = 100.0f;  // Конечное значение для автораспределения
+bool cruiseConfirmThrottleAfterStart = false; // подтверждать газом после старта/восстановления
+int cruiseAfterBrakingMode = 1;  // 0: сброс, 1: подтверждение газом (default), 2: восстановление к предыдущему
+int cruiseAfterThrottleMode = 2; // 0: сброс, 1: подтверждение газом, 2: восстановление к предыдущему (default)
 bool cruiseSoftStartEnabled = false;
 bool cruiseSoftStopEnabled = false;
 unsigned long cruiseSoftStartMs = 500;
@@ -1101,6 +1104,23 @@ a.card{display:block;background:#333;color:#fff;padding:15px;border-radius:8px;m
 a.card:active{background:#444}
 .warn{background:#5c1a1a;padding:12px;border-radius:8px;margin-bottom:16px;font-weight:bold;font-size:13px}
 
+/* LED Matrix Simulator */
+.matrix-card{background:#161616;border:2px solid #2a2a2a;border-radius:14px;padding:12px;margin-bottom:14px;text-align:center;box-shadow:0 6px 18px rgba(0,0,0,0.7);transition:all .2s}
+.matrix-title{font-size:11px;font-weight:bold;color:#777;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}
+.sim-matrix-area{display:flex;justify-content:center;align-items:center;margin-bottom:10px}
+#ledMatrixCanvas{background:#000;border:3px solid #222;border-radius:8px;box-shadow:inset 0 0 10px rgba(0,0,0,0.8);display:block;max-width:100%;height:auto}
+
+.sim-controls-panel{display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:12px;background:#1a1a1a;border:1px solid #2d2d2d;border-radius:10px;padding:10px}
+.sim-btns-group{display:flex;flex-direction:column;gap:8px;flex:1}
+.sim-side-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;font-size:13px;font-weight:bold;border-radius:8px;border:2px solid #383838;background:#242424;color:#eee;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:all .1s}
+.sim-side-btn:active, .sim-side-btn.active{background:#e74c3c;border-color:#c0392b;color:#fff}
+.sim-side-btn.pedal-btn:active, .sim-side-btn.pedal-btn.active{background:#27ae60;border-color:#2ecc71;color:#fff}
+
+.sim-throttle-group{display:flex;flex-direction:column;align-items:center;gap:6px;background:#202020;border:1px solid #333;border-radius:8px;padding:8px 10px}
+.sim-throttle-label{font-size:11px;font-weight:900;color:#888;text-transform:uppercase}
+.sim-slider-vert{writing-mode:bt-lr;-webkit-appearance:slider-vertical;width:24px;height:75px;cursor:pointer;accent-color:#e67e22}
+.sim-throttle-val{font-size:12px;font-weight:bold;color:#e67e22;min-width:36px;text-align:center}
+
 /* D-Pad Джойстик */
 .joystick-panel{background:#181818;border:2px solid #333;border-radius:18px;padding:16px;margin-bottom:16px;box-shadow:0 8px 24px rgba(0,0,0,0.6)}
 .joy-screen{background:#0a0f0d;border:2px solid #1e3a29;border-radius:10px;padding:10px 14px;margin-bottom:16px;text-align:center;font-family:monospace}
@@ -1130,17 +1150,39 @@ a.card:active{background:#444}
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 <div class="header">
   <h1>OpenBike Controller</h1>
-  <div class="version">v0.1.6-alpha</div>
+  <div class="version">v0.1.6-alpha &bull; 16&times;32 LED Matrix</div>
 </div>
 
-<div class="joystick-panel">
-  <div class="joy-screen">
+<div class="matrix-card" id="simMatrixCard">
+  <div class="matrix-title">16&times;32 LED Display Simulator (2&times; MAX7219)</div>
+  <div class="sim-matrix-area">
+    <canvas id="ledMatrixCanvas" width="320" height="160"></canvas>
+  </div>
+  <div class="sim-controls-panel" id="simControlsPanel">
+    <div class="sim-btns-group">
+      <button type="button" class="sim-side-btn" id="btnSimBrake">
+        <span>🛑</span> <span>Тормоз</span>
+      </button>
+      <button type="button" class="sim-side-btn pedal-btn" id="btnSimPedal">
+        <span>🔄</span> <span>Педали</span>
+      </button>
+    </div>
+    <div class="sim-throttle-group">
+      <span class="sim-throttle-label">Газ</span>
+      <input type="range" min="0" max="100" value="0" orient="vertical" class="sim-slider-vert" id="simGas">
+      <span class="sim-throttle-val" id="lblGas">0%</span>
+    </div>
+  </div>
+</div>
+
+<div class="joystick-panel" id="joystickPanel">
+  <div class="joy-screen" id="joyScreen">
     <div class="screen-mode" id="joyMode">PAS</div>
     <div class="screen-val" id="joyVal">УРОВЕНЬ 1</div>
     <div class="screen-status" id="joyStatus">ПОДТВЕРЖДЕНО</div>
   </div>
 
-  <div class="dpad-container">
+  <div class="dpad-container" id="dpadContainer">
     <button type="button" class="dpad-btn btn-up" id="btnUp" title="Увеличить">&#9650;</button>
     <button type="button" class="dpad-btn btn-left" id="btnLeft" title="Режим влево">&#9664;</button>
     <button type="button" class="dpad-btn btn-ok" id="btnOk" title="Применить">OK</button>
@@ -1170,13 +1212,460 @@ let activeCruiseLvl = )rawliteral" + String(cruiseCurrentLevel) + R"rawliteral(;
 const pasMax = )rawliteral" + String(pasLevelsCount) + R"rawliteral(;
 const cruiseMax = )rawliteral" + String(cruiseLevelsCount) + R"rawliteral(;
 
+const cfgThrottleInMin = )rawliteral" + String(throttleInMinV, 2) + R"rawliteral(;
+const cfgThrottleInMax = )rawliteral" + String(throttleInMaxV, 2) + R"rawliteral(;
+const cfgThrottleOutMin = )rawliteral" + String(throttleOutMinV, 2) + R"rawliteral(;
+const cfgThrottleOutMax = )rawliteral" + String(throttleOutMaxV, 2) + R"rawliteral(;
+
+const cfgCruiseConfirmThrottle = )rawliteral" + String(cruiseConfirmThrottleAfterStart ? "true" : "false") + R"rawliteral(;
+const cfgCruiseAfterBraking = )rawliteral" + String(cruiseAfterBrakingMode) + R"rawliteral(;
+const cfgCruiseAfterThrottle = )rawliteral" + String(cruiseAfterThrottleMode) + R"rawliteral(;
+
 let draftMode = (activeMode === "off") ? "pas" : activeMode;
 let draftPasLvl = activePasLvl;
 let draftCruiseLvl = activeCruiseLvl;
 let isDirty = false;
 let userInteractingUntil = 0;
 let applyInProgressUntil = 0;
-let simCruiseEngaged = false;
+let simCruiseEngaged = (activeMode === "cruise" && activeCruiseLvl > 0);
+let simCruisePendingResume = false;
+let arrowBounceUntil = 0;
+let arrowBounceDir = 0;
+
+// Screen Wake Lock API
+let wakeLock = null;
+async function requestWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (err) {
+      console.log('WakeLock error:', err);
+    }
+  }
+}
+requestWakeLock();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') requestWakeLock();
+});
+
+function checkUiVisibility() {
+  const showMatrix = localStorage.getItem("ui_show_matrix") !== "false";
+  const showControls = localStorage.getItem("ui_show_controls") !== "false";
+  const showScreen = localStorage.getItem("ui_show_screen") !== "false";
+  const showDpad = localStorage.getItem("ui_show_dpad") !== "false";
+
+  const matrixEl = document.getElementById("simMatrixCard");
+  const controlsEl = document.getElementById("simControlsPanel");
+  const screenEl = document.getElementById("joyScreen");
+  const dpadEl = document.getElementById("dpadContainer");
+  const joyPanel = document.getElementById("joystickPanel");
+
+  if (matrixEl) matrixEl.style.display = showMatrix ? "block" : "none";
+  if (controlsEl) controlsEl.style.display = showControls ? "flex" : "none";
+  if (screenEl) screenEl.style.display = showScreen ? "block" : "none";
+  if (dpadEl) dpadEl.style.display = showDpad ? "grid" : "none";
+  if (joyPanel) {
+    joyPanel.style.display = (!showScreen && !showDpad) ? "none" : "block";
+  }
+}
+document.addEventListener("DOMContentLoaded", checkUiVisibility);
+checkUiVisibility();
+
+// ================= 16x32 LED MATRIX RENDERING ENGINE =================
+const canvas = document.getElementById("ledMatrixCanvas");
+const ctx = canvas ? canvas.getContext("2d") : null;
+const MATRIX_ROWS = 16, MATRIX_COLS = 32;
+let matrixGrid = [];
+for (let r = 0; r < MATRIX_ROWS; r++) matrixGrid[r] = new Uint8Array(MATRIX_COLS);
+
+const BIG_GLYPHS = {
+  'P': [
+    [1,1,1,1,1,1,0],
+    [1,1,1,1,1,1,1],
+    [1,1,0,0,0,1,1],
+    [1,1,0,0,0,1,1],
+    [1,1,1,1,1,1,1],
+    [1,1,1,1,1,1,0],
+    [1,1,0,0,0,0,0],
+    [1,1,0,0,0,0,0],
+    [1,1,0,0,0,0,0],
+    [1,1,0,0,0,0,0],
+    [1,1,0,0,0,0,0]
+  ],
+  'C': [
+    [0,1,1,1,1,1,0],
+    [1,1,1,1,1,1,1],
+    [1,1,0,0,0,1,1],
+    [1,1,0,0,0,0,0],
+    [1,1,0,0,0,0,0],
+    [1,1,0,0,0,0,0],
+    [1,1,0,0,0,0,0],
+    [1,1,0,0,0,0,0],
+    [1,1,0,0,0,1,1],
+    [1,1,1,1,1,1,1],
+    [0,1,1,1,1,1,0]
+  ]
+};
+
+const DIGIT_GLYPHS = {
+  '0': [0x1F, 0x11, 0x11, 0x11, 0x1F],
+  '1': [0x00, 0x12, 0x1F, 0x10, 0x00],
+  '2': [0x1D, 0x15, 0x15, 0x15, 0x17],
+  '3': [0x15, 0x15, 0x15, 0x15, 0x1F],
+  '4': [0x07, 0x04, 0x04, 0x1F, 0x04],
+  '5': [0x17, 0x15, 0x15, 0x15, 0x1D],
+  '6': [0x1F, 0x15, 0x15, 0x15, 0x1D],
+  '7': [0x01, 0x01, 0x19, 0x05, 0x03],
+  '8': [0x1F, 0x15, 0x15, 0x15, 0x1F],
+  '9': [0x17, 0x15, 0x15, 0x15, 0x1F]
+};
+
+const ARROW_UP = [
+  [0,0,1,0,0],
+  [0,1,1,1,0]
+];
+const ARROW_DOWN = [
+  [0,1,1,1,0],
+  [0,0,1,0,0]
+];
+
+const ICON_BRAKE = [0b11111, 0b10001, 0b10101, 0b10001, 0b11111];
+const ICON_PEDAL_FRAMES = [
+  [0b11000, 0b01000, 0b00100, 0b00010, 0b00011],
+  [0b00000, 0b11000, 0b01110, 0b00011, 0b00000],
+  [0b00000, 0b00000, 0b11111, 0b00000, 0b00000],
+  [0b00000, 0b00011, 0b01110, 0b11000, 0b00000],
+  [0b00011, 0b00010, 0b00100, 0b01000, 0b11000],
+  [0b00000, 0b00011, 0b01110, 0b11000, 0b00000],
+  [0b00000, 0b00000, 0b11111, 0b00000, 0b00000],
+  [0b00000, 0b11000, 0b01110, 0b00011, 0b00000]
+];
+
+function clearMatrix() {
+  for (let r = 0; r < MATRIX_ROWS; r++) matrixGrid[r].fill(0);
+}
+function setMatrixPixel(r, c, val) {
+  if (r >= 0 && r < MATRIX_ROWS && c >= 0 && c < MATRIX_COLS) matrixGrid[r][c] = val ? 1 : 0;
+}
+function drawBigLetter(k, sr, sc) {
+  const g = BIG_GLYPHS[k]; if (!g) return;
+  for (let r = 0; r < 11; r++) {
+    for (let c = 0; c < 7; c++) {
+      if (g[r][c]) setMatrixPixel(sr + r, sc + c, 1);
+    }
+  }
+}
+function drawDigit5x7ToBuffer(dChar, buf) {
+  const g = DIGIT_GLYPHS[dChar];
+  if (!g) return;
+  for (let c = 0; c < 5; c++) {
+    for (let r = 0; r < 7; r++) {
+      if ((g[c] >> r) & 1) buf[r][c] = 1;
+    }
+  }
+}
+function drawArrow5x2(arrowMatrix, sr, sc) {
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 5; c++) {
+      if (arrowMatrix[r][c]) setMatrixPixel(sr + r, sc + c, 1);
+    }
+  }
+}
+function drawIcon5x5(b, sr, sc) {
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 5; c++) {
+      if ((b[r] >> (4 - c)) & 1) setMatrixPixel(sr + r, sc + c, 1);
+    }
+  }
+}
+
+// Elevator animation state
+let animStartLvl = 0;
+let animTargetLvl = 0;
+let animStartTime = 0;
+const ANIM_DURATION_MS = 250;
+
+function updateMatrixDisplay() {
+  clearMatrix();
+  const now = Date.now();
+  const blinkOn = Math.floor(now / 400) % 2 === 0;
+
+  let modeToDraw = draftMode;
+  let lvlToDraw = (modeToDraw === "pas") ? draftPasLvl : ((modeToDraw === "cruise") ? draftCruiseLvl : 0);
+  let maxLvl = (modeToDraw === "pas") ? pasMax : cruiseMax;
+
+  if (lvlToDraw !== animTargetLvl) {
+    animStartLvl = animTargetLvl;
+    animTargetLvl = lvlToDraw;
+    animStartTime = now;
+  }
+  let animProgress = 1;
+  if (now - animStartTime < ANIM_DURATION_MS) {
+    let t = (now - animStartTime) / ANIM_DURATION_MS;
+    animProgress = 1 - Math.pow(1 - t, 3);
+  }
+
+  // 1. Draw Big Letter P or C (height 11px, rows 2..12) - blink when draft mode differs from active mode
+  let modeSwitchPending = isDirty && (draftMode !== activeMode);
+  if (!modeSwitchPending || blinkOn) {
+    if (modeToDraw === "pas") {
+      drawBigLetter('P', 2, 1);
+    } else if (modeToDraw === "cruise") {
+      drawBigLetter('C', 2, 1);
+    }
+  }
+
+  // 2. Arrows (Up: row 2..3, Down: row 11..12) with 500ms ±1px bounce
+  let isTwoDigits = (lvlToDraw >= 10);
+  let arrowCol = isTwoDigits ? 13 : 12;
+  let arrowUpVOffset = 0;
+  let arrowDownVOffset = 0;
+  if (now < arrowBounceUntil) {
+    let remaining = arrowBounceUntil - now;
+    let bPhase = Math.sin((500 - remaining) / 500 * Math.PI);
+    if (arrowBounceDir > 0) {
+      arrowUpVOffset = -Math.round(bPhase * 1.2);
+    } else if (arrowBounceDir < 0) {
+      arrowDownVOffset = Math.round(bPhase * 1.2);
+    }
+  }
+
+  if (lvlToDraw < maxLvl) {
+    drawArrow5x2(ARROW_UP, 2 + arrowUpVOffset, arrowCol);
+  }
+  if (lvlToDraw > 0) {
+    drawArrow5x2(ARROW_DOWN, 11 + arrowDownVOffset, arrowCol);
+  }
+
+  // 3. Elevator Animation inside digit window: rows 5..11 (height 7px), strictly clipped
+  let isCruiseWaiting = (modeToDraw === "cruise" && activeCruiseLvl > 0 && !simCruiseEngaged && !isDirty);
+  let showDigits = true;
+  if ((isDirty || isCruiseWaiting) && !blinkOn) showDigits = false;
+
+  if (showDigits) {
+    let fromLvl = animStartLvl;
+    let toLvl = animTargetLvl;
+    let dir = (toLvl >= fromLvl) ? 1 : -1;
+
+    const renderLevelToMatrix = (lvlVal, rowOffset) => {
+      let tD = Math.floor(lvlVal / 10);
+      let oD = lvlVal % 10;
+      let twoD = (lvlVal >= 10);
+      let startC = twoD ? 10 : 12;
+
+      let buf1 = Array.from({length: 7}, () => new Uint8Array(5));
+      let buf2 = Array.from({length: 7}, () => new Uint8Array(5));
+
+      if (twoD) {
+        drawDigit5x7ToBuffer(tD.toString(), buf1);
+        drawDigit5x7ToBuffer(oD.toString(), buf2);
+      } else {
+        drawDigit5x7ToBuffer(oD.toString(), buf1);
+      }
+
+      for (let r = 0; r < 7; r++) {
+        let targetRow = Math.round(5 + r + rowOffset);
+        if (targetRow >= 5 && targetRow <= 11) {
+          for (let c = 0; c < 5; c++) {
+            if (buf1[r][c]) setMatrixPixel(targetRow, startC + c, 1);
+            if (twoD && buf2[r][c]) setMatrixPixel(targetRow, startC + 6 + c, 1);
+          }
+        }
+      }
+    };
+
+    if (animProgress < 1 && fromLvl !== toLvl) {
+      renderLevelToMatrix(Math.round(fromLvl), Math.round(-dir * animProgress * 7));
+      renderLevelToMatrix(Math.round(toLvl), Math.round(dir * (1 - animProgress) * 7));
+    } else {
+      renderLevelToMatrix(lvlToDraw, 0);
+    }
+  }
+
+  // 4. Scales calculation
+  let inMin = cfgThrottleInMin, inMax = Math.max(inMin + 0.01, cfgThrottleInMax);
+  let outMin = cfgThrottleOutMin, outMax = Math.max(outMin + 0.01, cfgThrottleOutMax);
+  let rawGripV = inMin + (simGasPct / 100) * (inMax - inMin);
+  let clampedV = Math.max(inMin, Math.min(inMax, rawGripV));
+  let calibOutV = outMin + ((clampedV - inMin) / (inMax - inMin)) * (outMax - outMin);
+  let calibOutPct = Math.max(0, Math.min(100, ((calibOutV - outMin) / (outMax - outMin)) * 100));
+
+  let inGasLeds = Math.round((simGasPct / 100) * 16);
+  for (let r = 0; r < inGasLeds; r++) setMatrixPixel(15 - r, 30, 1);
+
+  let effectiveOutPct = 0;
+  if (!simBrakeActive) {
+    let baseMotorPct = calibOutPct;
+    if (activeMode === "cruise" && activeCruiseLvl > 0 && simCruiseEngaged) {
+      let targetCruisePct = Math.min(100, activeCruiseLvl * (100 / Math.max(1, cruiseMax)));
+      baseMotorPct = Math.max(baseMotorPct, targetCruisePct);
+    } else if (activeMode === "pas" && activePasLvl > 0 && simPedalActive) {
+      let targetPasPct = Math.min(100, activePasLvl * (100 / Math.max(1, pasMax)));
+      baseMotorPct = Math.max(baseMotorPct, targetPasPct);
+    }
+    effectiveOutPct = baseMotorPct;
+  }
+  let outGasLeds = Math.round((effectiveOutPct / 100) * 16);
+  for (let r = 0; r < outGasLeds; r++) setMatrixPixel(15 - r, 31, 1);
+
+  // Bottom-right 5x5 Indicator area: cols 24..28, rows 10..14
+  if (simBrakeActive) {
+    const brakeBlink = Math.floor(now / 90) % 2 === 0;
+    if (brakeBlink) drawIcon5x5(ICON_BRAKE, 10, 24);
+  } else if (simPedalActive) {
+    let frame = Math.floor((now - simPedalStartMs) / 75) % 8;
+    drawIcon5x5(ICON_PEDAL_FRAMES[frame], 10, 24);
+  }
+
+  if (!canvas || !ctx) return;
+  const cellW = canvas.width / MATRIX_COLS;
+  const cellH = canvas.height / MATRIX_ROWS;
+  const radius = Math.min(cellW, cellH) * 0.42;
+
+  ctx.fillStyle = "#0c0c0c";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = "#1a1a1a";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, 8 * cellH);
+  ctx.lineTo(canvas.width, 8 * cellH);
+  ctx.stroke();
+
+  for (let r = 0; r < MATRIX_ROWS; r++) {
+    for (let c = 0; c < MATRIX_COLS; c++) {
+      const cx = c * cellW + cellW / 2;
+      const cy = r * cellH + cellH / 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      if (matrixGrid[r][c] === 1) {
+        ctx.fillStyle = "#ff8c00";
+        ctx.shadowColor = "#ff7700";
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.fillStyle = "#1e140a";
+        ctx.fill();
+      }
+    }
+  }
+}
+setInterval(updateMatrixDisplay, 40);
+
+// Virtual simulation inputs
+let simGasPct = 0;
+let simBrakeActive = false;
+let simPedalActive = false;
+let simPedalStartMs = 0;
+const sliderGas = document.getElementById("simGas");
+const lblGas = document.getElementById("lblGas");
+// simCruisePendingResume: cruise level is preserved but motor output is disengaged, waiting to resume
+// simCruiseConfirmRequired: true = must actively press+release+press throttle to resume; false = auto-resume once safe
+// simCruiseReleaseSeen: guards against instantly re-confirming while throttle is still held from the blip
+let simCruiseConfirmRequired = false;
+let simCruiseReleaseSeen = true;
+
+function armCruisePending(confirmRequired) {
+  simCruiseEngaged = false;
+  simCruisePendingResume = true;
+  simCruiseConfirmRequired = confirmRequired;
+  simCruiseReleaseSeen = (simGasPct <= 10); // if throttle is already low, next press counts immediately
+}
+
+if (sliderGas) {
+  sliderGas.addEventListener("input", (e) => {
+    simGasPct = parseInt(e.target.value) || 0;
+    if (lblGas) lblGas.innerText = simGasPct + "%";
+    if (activeMode === "cruise" && activeCruiseLvl > 0 && !simBrakeActive) {
+      if (simCruiseEngaged && simGasPct > 10) {
+        // "Перегазовка": throttle pressed above target level while cruise is engaged
+        if (cfgCruiseAfterThrottle === 0) {
+          // Reset cruise, requires OK + throttle to re-arm
+          activeMode = "off";
+          activeCruiseLvl = 0;
+          draftCruiseLvl = 0;
+          simCruiseEngaged = false;
+          simCruisePendingResume = false;
+        } else if (cfgCruiseAfterThrottle === 1) {
+          armCruisePending(true); // require release + fresh press to confirm
+        } else if (cfgCruiseAfterThrottle === 2) {
+          armCruisePending(false); // auto-resume once throttle is released
+        }
+        if (typeof renderJoystick === "function") renderJoystick();
+      } else if (!simCruiseEngaged && simCruisePendingResume) {
+        if (simCruiseConfirmRequired) {
+          if (simGasPct <= 10) {
+            simCruiseReleaseSeen = true;
+          } else if (simCruiseReleaseSeen && (simGasPct > 10 || !cfgCruiseConfirmThrottle)) {
+            simCruiseEngaged = true;
+            simCruisePendingResume = false;
+            if (typeof renderJoystick === "function") renderJoystick();
+          }
+        } else {
+          // Auto-resume: as soon as throttle drops back down, re-engage cruise silently
+          if (simGasPct <= 10) {
+            simCruiseEngaged = true;
+            simCruisePendingResume = false;
+            if (typeof renderJoystick === "function") renderJoystick();
+          }
+        }
+      }
+    }
+  });
+}
+const btnBrake = document.getElementById("btnSimBrake");
+if (btnBrake) {
+  const setBrake = (val) => {
+    simBrakeActive = val;
+    if (val) {
+      btnBrake.classList.add("active");
+      simPedalActive = false;
+      if (document.getElementById("btnSimPedal")) document.getElementById("btnSimPedal").classList.remove("active");
+      if (activeMode === "cruise" && activeCruiseLvl > 0) {
+        if (cfgCruiseAfterBraking === 0) {
+          // Reset cruise, requires OK + throttle to re-arm
+          activeMode = "off";
+          activeCruiseLvl = 0;
+          draftCruiseLvl = 0;
+          simCruiseEngaged = false;
+          simCruisePendingResume = false;
+        } else if (cfgCruiseAfterBraking === 1) {
+          armCruisePending(true); // require throttle confirmation before resuming
+        } else if (cfgCruiseAfterBraking === 2) {
+          armCruisePending(false); // restore to previous value immediately on brake release (dangerous)
+        }
+        if (typeof renderJoystick === "function") renderJoystick();
+      }
+    } else {
+      btnBrake.classList.remove("active");
+      if (activeMode === "cruise" && activeCruiseLvl > 0 && simCruisePendingResume && !simCruiseConfirmRequired) {
+        simCruiseEngaged = true;
+        simCruisePendingResume = false;
+        if (typeof renderJoystick === "function") renderJoystick();
+      }
+    }
+  };
+  btnBrake.addEventListener("mousedown", () => setBrake(true));
+  btnBrake.addEventListener("mouseup", () => setBrake(false));
+  btnBrake.addEventListener("mouseleave", () => setBrake(false));
+  btnBrake.addEventListener("touchstart", (e) => { e.preventDefault(); setBrake(true); });
+  btnBrake.addEventListener("touchend", (e) => { e.preventDefault(); setBrake(false); });
+}
+const btnPedal = document.getElementById("btnSimPedal");
+if (btnPedal) {
+  btnPedal.addEventListener("click", () => {
+    vib();
+    simPedalActive = !simPedalActive;
+    if (simPedalActive) {
+      simPedalStartMs = Date.now();
+      btnPedal.classList.add("active");
+    } else {
+      btnPedal.classList.remove("active");
+    }
+  });
+}
 
 function vib() { if (navigator.vibrate) navigator.vibrate(30); }
 
@@ -1204,9 +1693,18 @@ function renderJoystick() {
   }
 
   let modified = false;
-  if (draftMode !== activeMode) modified = true;
-  else if (draftMode === "pas" && draftPasLvl !== activePasLvl) modified = true;
-  else if (draftMode === "cruise" && draftCruiseLvl !== activeCruiseLvl) modified = true;
+  if (activeMode === "off") {
+    // When nothing is active, only the currently selected draft level matters —
+    // switching draftMode alone (PAS <-> Cruise) with level 0 should NOT be dirty.
+    let draftLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
+    modified = (draftLvl !== 0);
+  } else if (draftMode !== activeMode) {
+    modified = true;
+  } else if (draftMode === "pas" && draftPasLvl !== activePasLvl) {
+    modified = true;
+  } else if (draftMode === "cruise" && draftCruiseLvl !== activeCruiseLvl) {
+    modified = true;
+  }
 
   isDirty = modified;
   if (isDirty) {
@@ -1234,16 +1732,27 @@ document.getElementById("btnRight").addEventListener("click", toggleMode);
 document.getElementById("btnUp").addEventListener("click", () => {
   vib();
   userInteractingUntil = Date.now() + 4000;
-  if (draftMode === "pas") { if (draftPasLvl < pasMax) draftPasLvl++; }
-  else if (draftMode === "cruise") { if (draftCruiseLvl < cruiseMax) draftCruiseLvl++; }
+  let curLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
+  let maxLvl = (draftMode === "pas") ? pasMax : cruiseMax;
+  if (curLvl < maxLvl) {
+    if (draftMode === "pas") draftPasLvl++;
+    else if (draftMode === "cruise") draftCruiseLvl++;
+    arrowBounceUntil = Date.now() + 500;
+    arrowBounceDir = 1;
+  }
   renderJoystick();
 });
 
 document.getElementById("btnDown").addEventListener("click", () => {
   vib();
   userInteractingUntil = Date.now() + 4000;
-  if (draftMode === "pas") { if (draftPasLvl > 0) draftPasLvl--; }
-  else if (draftMode === "cruise") { if (draftCruiseLvl > 0) draftCruiseLvl--; }
+  let curLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
+  if (curLvl > 0) {
+    if (draftMode === "pas") draftPasLvl--;
+    else if (draftMode === "cruise") draftCruiseLvl--;
+    arrowBounceUntil = Date.now() + 500;
+    arrowBounceDir = -1;
+  }
   renderJoystick();
 });
 
@@ -1269,7 +1778,17 @@ document.getElementById("btnOk").addEventListener("click", () => {
   }
 
   if (targetMode === "cruise" && targetLvl > 0) {
-    simCruiseEngaged = false;
+    // Starting/changing cruise level via OK: if confirmation is required, wait for
+    // a fresh throttle press before engaging the motor output.
+    if (cfgCruiseConfirmThrottle) {
+      simCruiseEngaged = false;
+      simCruisePendingResume = true;
+      simCruiseConfirmRequired = true;
+      simCruiseReleaseSeen = (simGasPct <= 10);
+    } else {
+      simCruiseEngaged = false;
+      simCruisePendingResume = false;
+    }
   }
 
   draftMode = (activeMode === "off") ? targetMode : activeMode;
@@ -1956,6 +2475,9 @@ void cruiseSettingsSave() {
   prefs.putBytes("pct", cruiseLevelPercent, sizeof(cruiseLevelPercent));
   prefs.putFloat("stPct", cruiseStartPercent);
   prefs.putFloat("endPct", cruiseEndPercent);
+  prefs.putBool("confThr", cruiseConfirmThrottleAfterStart);
+  prefs.putInt("brkMode", cruiseAfterBrakingMode);
+  prefs.putInt("thrMode", cruiseAfterThrottleMode);
   prefs.putInt("ssEn", cruiseSoftStartEnabled ? 1 : 0);
   prefs.putInt("spEn", cruiseSoftStopEnabled ? 1 : 0);
   prefs.putULong("ssMs", cruiseSoftStartMs);
@@ -1973,6 +2495,9 @@ void cruiseSettingsLoad() {
   cruiseEnabled = prefs.getBool("cen", false); // Load cruiseEnabled state
   cruiseSoftStartMs = prefs.getULong("ssMs", 500);
   cruiseSoftStopMs = prefs.getULong("spMs", 800);
+  cruiseConfirmThrottleAfterStart = prefs.getBool("confThr", false);
+  cruiseAfterBrakingMode = prefs.getInt("brkMode", 1);
+  cruiseAfterThrottleMode = prefs.getInt("thrMode", 2);
   prefs.end();
   if (got != sizeof(cruiseLevelPercent)) {
     cruiseAutoDistribute();
@@ -2040,6 +2565,23 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
 <label>Время торможения (мс)</label><input type="number" name="spMs" value=")rawliteral";
   html += String(cruiseSoftStopMs);
   html += R"rawliteral(">
+</fieldset>
+<fieldset><legend>Поведение круиз-контроля</legend>
+<div class="chk"><input type="checkbox" name="confThr" )rawliteral";
+  html += cruiseConfirmThrottleAfterStart ? "checked" : "";
+  html += R"rawliteral(><label>Подтверждать газом после старта</label></div>
+<label>После торможения</label>
+<select name="brkMode">
+  <option value="0")rawliteral"; html += (cruiseAfterBrakingMode == 0 ? " selected" : ""); html += R"rawliteral(>Сбрасывать круиз, требуется нажатие ОК и газ</option>
+  <option value="1")rawliteral"; html += (cruiseAfterBrakingMode == 1 ? " selected" : ""); html += R"rawliteral(>Требуется подтверждение через газ</option>
+  <option value="2")rawliteral"; html += (cruiseAfterBrakingMode == 2 ? " selected" : ""); html += R"rawliteral(>Восстанавливать к предыдущему значению (ИСПОЛЬЗОВАТЬ С КРАЙНЕЙ ОСТОРОЖНОСТЬЮ!!!)</option>
+</select>
+<label>После перегазовки</label>
+<select name="thrMode">
+  <option value="0")rawliteral"; html += (cruiseAfterThrottleMode == 0 ? " selected" : ""); html += R"rawliteral(>Сбрасывать круиз, требуется нажатие ОК и газ</option>
+  <option value="1")rawliteral"; html += (cruiseAfterThrottleMode == 1 ? " selected" : ""); html += R"rawliteral(>Требуется подтверждение через газ</option>
+  <option value="2")rawliteral"; html += (cruiseAfterThrottleMode == 2 ? " selected" : ""); html += R"rawliteral(>Восстанавливать к предыдущему значению (ИСПОЛЬЗОВАТЬ С КРАЙНЕЙ ОСТОРОЖНОСТЬЮ!!!)</option>
+</select>
 </fieldset>
 <button type="submit" style="background:#27ae60;color:#fff;border:none;font-weight:bold">Сохранить</button>
 </form>
@@ -2138,6 +2680,9 @@ void handleCruiseSave() {
   cruiseSoftStopEnabled = server.hasArg("spEn");
   cruiseSoftStartMs = server.arg("ssMs").toInt();
   cruiseSoftStopMs = server.arg("spMs").toInt();
+  cruiseConfirmThrottleAfterStart = server.hasArg("confThr");
+  if (server.hasArg("brkMode")) cruiseAfterBrakingMode = server.arg("brkMode").toInt();
+  if (server.hasArg("thrMode")) cruiseAfterThrottleMode = server.arg("thrMode").toInt();
   cruiseSettingsSave();
   server.send(200, "text/plain", "OK");
 }
@@ -2161,10 +2706,26 @@ a.back{color:#4a90d9;text-decoration:none;display:inline-block;margin-top:20px;}
 <p><a class="back" href="/">&larr; Меню</a></p>
 <h1>Система</h1>
 <div style="background:#222;border:1px solid #333;border-radius:8px;padding:12px;margin-bottom:15px">
-  <div style="font-weight:bold;margin-bottom:8px;color:#4a90d9">Интерфейс</div>
-  <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+  <div style="font-weight:bold;margin-bottom:8px;color:#4a90d9">Интерфейс и элементы управления</div>
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
     <input type="checkbox" id="chkShowTopbar" onchange="toggleTopbar(this.checked)" style="width:auto;cursor:pointer">
-    <span>Показывать верхнюю панель статуса (Top Bar)</span>
+    <span>Верхняя панель статуса (Top Bar)</span>
+  </label>
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
+    <input type="checkbox" id="chkShowMatrix" onchange="toggleUiItem('ui_show_matrix', this.checked)" style="width:auto;cursor:pointer">
+    <span>LED Matrix дисплей (16&times;32)</span>
+  </label>
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
+    <input type="checkbox" id="chkShowControls" onchange="toggleUiItem('ui_show_controls', this.checked)" style="width:auto;cursor:pointer">
+    <span>Кнопки симуляции (Тормоз, Педали, Газ)</span>
+  </label>
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
+    <input type="checkbox" id="chkShowScreen" onchange="toggleUiItem('ui_show_screen', this.checked)" style="width:auto;cursor:pointer">
+    <span>Экранчик джойстика</span>
+  </label>
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+    <input type="checkbox" id="chkShowDpad" onchange="toggleUiItem('ui_show_dpad', this.checked)" style="width:auto;cursor:pointer">
+    <span>Кнопки джойстика (D-Pad)</span>
   </label>
 </div>
 <a class="card" href="/update">Обновить прошивку (.bin) &rarr;</a>
@@ -2177,9 +2738,15 @@ a.back{color:#4a90d9;text-decoration:none;display:inline-block;margin-top:20px;}
 <script>
 document.addEventListener("DOMContentLoaded", () => {
   const chk = document.getElementById("chkShowTopbar");
-  if (chk) {
-    chk.checked = localStorage.getItem("ui_show_topbar") !== "false";
-  }
+  if (chk) chk.checked = localStorage.getItem("ui_show_topbar") !== "false";
+  const chkM = document.getElementById("chkShowMatrix");
+  if (chkM) chkM.checked = localStorage.getItem("ui_show_matrix") !== "false";
+  const chkC = document.getElementById("chkShowControls");
+  if (chkC) chkC.checked = localStorage.getItem("ui_show_controls") !== "false";
+  const chkS = document.getElementById("chkShowScreen");
+  if (chkS) chkS.checked = localStorage.getItem("ui_show_screen") !== "false";
+  const chkD = document.getElementById("chkShowDpad");
+  if (chkD) chkD.checked = localStorage.getItem("ui_show_dpad") !== "false";
 });
 
 function toggleTopbar(show) {
@@ -2190,6 +2757,10 @@ function toggleTopbar(show) {
     const tb = document.querySelector(".top-bar-sticky");
     if (tb) tb.style.display = show ? "flex" : "none";
   }
+}
+
+function toggleUiItem(key, show) {
+  localStorage.setItem(key, show ? "true" : "false");
 }
 function exportSettings() {
   fetch('/system/export').then(r => {
