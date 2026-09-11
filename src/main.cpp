@@ -115,6 +115,14 @@ unsigned long cpuMeasureStartMs = 0;
 unsigned long cpuBusyTimeMicros = 0;
 int cpuUsagePercent = 0;
 
+// ================= Real-time telemetry variables ================
+volatile float hwThrottleInV = 0.0f;
+volatile float hwThrottleOutV = 0.0f;
+volatile float hwThrottlePct = 0.0f;
+volatile float hwMotorOutPct = 0.0f;
+volatile bool hwBrakeActive = false;
+volatile bool hwPasActive = false;
+
 // ================= Веб: статус системы (JSON endpoint) ================
 void handleSystemStatus() {
   uint32_t freeHeap = ESP.getFreeHeap();
@@ -151,6 +159,12 @@ void handleSystemStatus() {
   json += "\"mdns_host\":\"" + String(MDNS_HOST) + ".local\",";
   json += "\"wifi_rssi\":" + String(rssi) + ",";
   json += "\"pas_en\":" + String(pasEnabled ? "true" : "false") + ",";
+  json += "\"gas_pct\":" + String(hwThrottlePct, 2) + ",";
+  json += "\"gas_in_v\":" + String(hwThrottleInV, 2) + ",";
+  json += "\"gas_out_v\":" + String(hwThrottleOutV, 2) + ",";
+  json += "\"motor_pct\":" + String(hwMotorOutPct, 2) + ",";
+  json += "\"brake\":" + String(hwBrakeActive ? "true" : "false") + ",";
+  json += "\"pas_active\":" + String(hwPasActive ? "true" : "false") + ",";
   json += "\"pas_lvl\":" + String(pasCurrentLevel) + ",";
   json += "\"pas_cnt\":" + String(pasLevelsCount) + ",";
   json += "\"cruise_en\":" + String(cruiseEnabled ? "true" : "false") + ",";
@@ -694,15 +708,6 @@ void updateThrottle() {
     }
   }
 
-  if (brakePressed) {
-    setThrottleOutputSafeZero();
-    throttleSmoothOutV = 0;
-    pasSmoothOutV = 0;
-    cruiseSmoothOutV = 0;
-    updateDebugBuffer(0, 0);
-    return;
-  }
-
   float pasTargetV = getPasTargetV();
   float pasOutV = applyPasSmoothing(pasTargetV);
 
@@ -712,6 +717,23 @@ void updateThrottle() {
   float combinedV = throttleOutV;
   if (pasOutV > combinedV) combinedV = pasOutV;
   if (cruiseOutV > combinedV) combinedV = cruiseOutV;
+
+  // Обновляем глобальные переменные телеметрии
+  hwThrottleInV = realGripV;
+  hwThrottleOutV = brakePressed ? 0.0f : combinedV;
+  hwThrottlePct = throttlePct;
+  hwMotorOutPct = brakePressed ? 0.0f : combinedV / throttleOutMaxV * 100.0f;
+  hwBrakeActive = brakePressed;
+  hwPasActive = pasConfirmedActive;
+
+  if (brakePressed) {
+    setThrottleOutputSafeZero();
+    throttleSmoothOutV = 0;
+    pasSmoothOutV = 0;
+    cruiseSmoothOutV = 0;
+    updateDebugBuffer(0, 0);
+    return;
+  }
 
   // ОУ (канал Б) поднимает напряжение в throttleOutputGain раз — значит на
   // сам ЦАП нужно подать МЕНЬШЕ, чтобы после усиления получить цель.
@@ -1574,12 +1596,12 @@ function updateMatrixDisplay() {
   for (let r = 0; r < inGasLeds; r++) setMatrixPixel(15 - r, 30, 1);
 
   let effectiveOutPct = 0;
-  if (!simBrakeActive) {
+  if (!effectiveBrake) {
     let baseMotorPct = calibOutPct;
     if (activeMode === "cruise" && activeCruiseLvl > 0 && simCruiseEngaged) {
       let targetCruisePct = Math.min(100, activeCruiseLvl * (100 / Math.max(1, cruiseMax)));
       baseMotorPct = Math.max(baseMotorPct, targetCruisePct);
-    } else if (activeMode === "pas" && activePasLvl > 0 && simPedalActive) {
+    } else if (activeMode === "pas" && activePasLvl > 0 && effectivePedal) {
       let targetPasPct = Math.min(100, activePasLvl * (100 / Math.max(1, pasMax)));
       baseMotorPct = Math.max(baseMotorPct, targetPasPct);
     }
@@ -1589,10 +1611,10 @@ function updateMatrixDisplay() {
   for (let r = 0; r < outGasLeds; r++) setMatrixPixel(15 - r, 31, 1);
 
   // Bottom-right 5x5 Indicator area: cols 24..28, rows 10..14
-  if (simBrakeActive) {
+  if (effectiveBrake) {
     const brakeBlink = Math.floor(now / 90) % 2 === 0;
     if (brakeBlink) drawIcon5x5(ICON_BRAKE, 10, 24);
-  } else if (simPedalActive) {
+  } else if (effectivePedal) {
     let frame = Math.floor((now - simPedalStartMs) / 75) % 8;
     drawIcon5x5(ICON_PEDAL_FRAMES[frame], 10, 24);
   }
@@ -1634,119 +1656,122 @@ function updateMatrixDisplay() {
 setInterval(updateMatrixDisplay, 40);
 
 // Virtual simulation inputs
-let simGasPct = 0;
-let simBrakeActive = false;
-let simPedalActive = false;
+let simGasPct = 0; // This will now reflect the physical throttle's value
+let simBrakeActive = false; // Virtual brake button state
+let simPedalActive = false; // Virtual pedal button state
 let simPedalStartMs = 0;
 const sliderGas = document.getElementById("simGas");
 const lblGas = document.getElementById("lblGas");
-// simCruisePendingResume: cruise level is preserved but motor output is disengaged, waiting to resume
-// simCruiseConfirmRequired: true = must actively press+release+press throttle to resume; false = auto-resume once safe
-// simCruiseReleaseSeen: guards against instantly re-confirming while throttle is still held from the blip
-let simCruiseConfirmRequired = false;
-let simCruiseReleaseSeen = true;
 
-function armCruisePending(confirmRequired) {
-  simCruiseEngaged = false;
-  simCruisePendingResume = true;
-  simCruiseConfirmRequired = confirmRequired;
-  simCruiseReleaseSeen = (simGasPct <= 10); // if throttle is already low, next press counts immediately
-}
+// Real-time data from hardware
+let hwBrakeActive = false;
+let hwPasActive = false;
 
-if (sliderGas) {
-  sliderGas.addEventListener("input", (e) => {
-    simGasPct = parseInt(e.target.value) || 0;
-    if (lblGas) lblGas.innerText = simGasPct + "%";
-    if (activeMode === "cruise" && activeCruiseLvl > 0 && !simBrakeActive) {
-      if (simCruiseEngaged && simGasPct > 10) {
-        // "Перегазовка": throttle pressed above target level while cruise is engaged
-        if (cfgCruiseAfterThrottle === 0) {
-          // Reset cruise, requires OK + throttle to re-arm
-          activeMode = "off";
-          activeCruiseLvl = 0;
-          draftCruiseLvl = 0;
-          simCruiseEngaged = false;
-          simCruisePendingResume = false;
-        } else if (cfgCruiseAfterThrottle === 1) {
-          armCruisePending(true); // require release + fresh press to confirm
-        } else if (cfgCruiseAfterThrottle === 2) {
-          armCruisePending(false); // auto-resume once throttle is released
-        }
-        if (typeof renderJoystick === "function") renderJoystick();
-      } else if (!simCruiseEngaged && simCruisePendingResume) {
-        if (simCruiseConfirmRequired) {
-          if (simGasPct <= 10) {
-            simCruiseReleaseSeen = true;
-          } else if (simCruiseReleaseSeen && (simGasPct > 10 || !cfgCruiseConfirmThrottle)) {
-            simCruiseEngaged = true;
-            simCruisePendingResume = false;
-            if (typeof renderJoystick === "function") renderJoystick();
-          }
-        } else {
-          // Auto-resume: as soon as throttle drops back down, re-engage cruise silently
-          if (simGasPct <= 10) {
-            simCruiseEngaged = true;
-            simCruisePendingResume = false;
-            if (typeof renderJoystick === "function") renderJoystick();
-          }
-        }
-      }
-    }
-  });
-}
-const btnBrake = document.getElementById("btnSimBrake");
-if (btnBrake) {
-  const setBrake = (val) => {
-    simBrakeActive = val;
-    if (val) {
-      btnBrake.classList.add("active");
-      simPedalActive = false;
-      if (document.getElementById("btnSimPedal")) document.getElementById("btnSimPedal").classList.remove("active");
-      if (activeMode === "cruise" && activeCruiseLvl > 0) {
-        if (cfgCruiseAfterBraking === 0) {
-          // Reset cruise, requires OK + throttle to re-arm
-          activeMode = "off";
-          activeCruiseLvl = 0;
-          draftCruiseLvl = 0;
-          simCruiseEngaged = false;
-          simCruisePendingResume = false;
-        } else if (cfgCruiseAfterBraking === 1) {
-          armCruisePending(true); // require throttle confirmation before resuming
-        } else if (cfgCruiseAfterBraking === 2) {
-          armCruisePending(false); // restore to previous value immediately on brake release (dangerous)
-        }
-        if (typeof renderJoystick === "function") renderJoystick();
-      }
-    } else {
-      btnBrake.classList.remove("active");
-      if (activeMode === "cruise" && activeCruiseLvl > 0 && simCruisePendingResume && !simCruiseConfirmRequired) {
-        simCruiseEngaged = true;
-        simCruisePendingResume = false;
-        if (typeof renderJoystick === "function") renderJoystick();
-      }
-    }
-  };
-  btnBrake.addEventListener("mousedown", () => setBrake(true));
-  btnBrake.addEventListener("mouseup", () => setBrake(false));
-  btnBrake.addEventListener("mouseleave", () => setBrake(false));
-  btnBrake.addEventListener("touchstart", (e) => { e.preventDefault(); setBrake(true); });
-  btnBrake.addEventListener("touchend", (e) => { e.preventDefault(); setBrake(false); });
-}
-const btnPedal = document.getElementById("btnSimPedal");
-if (btnPedal) {
-  btnPedal.addEventListener("click", () => {
-    vib();
-    simPedalActive = !simPedalActive;
-    if (simPedalActive) {
-      simPedalStartMs = Date.now();
-      btnPedal.classList.add("active");
-    } else {
-      btnPedal.classList.remove("active");
-    }
-  });
+// Combined effective states
+let effectiveBrake = false;
+let effectivePedal = false;
+
+// Variables for combined state update
+let currentMode = "";
+let currentPasLvl = 0;
+let currentCruiseLvl = 0;
+let currentCruiseEngaged = false;
+
+// Function to update effective states based on simulation and hardware inputs
+function updateEffectiveStates() {
+  effectiveBrake = simBrakeActive || hwBrakeActive;
+  effectivePedal = simPedalActive || hwPasActive;
 }
 
-function vib() { if (navigator.vibrate) navigator.vibrate(30); }
+function refreshHubData(forceSync = false) {
+  if (!forceSync && (isDirty || Date.now() < applyInProgressUntil)) return;
+  fetch("/status/sys")
+    .then(r => r.json())
+    .then(d => {
+      // Update hardware states
+      hwBrakeActive = d.brake || false;
+      hwPasActive = d.pas_active || false; // Use 'pas_active' field
+
+      // Update throttle slider and label from physical sensor
+      simGasPct = d.gas_pct || 0;
+      if (sliderGas) {
+        sliderGas.value = simGasPct; // Update slider visually
+      }
+      if (lblGas) {
+        lblGas.innerText = simGasPct + "%";
+      }
+
+      // Update effective states
+      updateEffectiveStates();
+
+      // Update joystick mode and level display
+      currentMode = d.pas_en ? "pas" : (d.cruise_en ? "cruise" : "off");
+      currentPasLvl = d.pas_lvl || 0;
+      currentCruiseLvl = d.cruise_lvl || 0;
+      currentCruiseEngaged = d.cruise_engaged || false;
+
+      let serverMode = currentMode;
+      let serverPasLvl = currentPasLvl;
+      let serverCruiseLvl = currentCruiseLvl;
+      let serverCruiseEngaged = currentCruiseEngaged;
+
+      if (serverMode === "cruise" && activeMode === "cruise") {
+        simCruiseEngaged = serverCruiseEngaged;
+      }
+
+      if (serverMode !== activeMode || serverPasLvl !== activePasLvl || serverCruiseLvl !== activeCruiseLvl) {
+        activeMode = serverMode;
+        activePasLvl = serverPasLvl;
+        activeCruiseLvl = serverCruiseLvl;
+        if (!isDirty || forceSync) {
+          draftMode = (activeMode === "off") ? "pas" : activeMode;
+          draftPasLvl = activePasLvl;
+          draftCruiseLvl = activeCruiseLvl;
+          if (forceSync) isDirty = false;
+        }
+        renderJoystick();
+      }
+
+      // Update visual feedback for simulated buttons based on effective states
+      const btnBrake = document.getElementById("btnSimBrake");
+      if (btnBrake) {
+        if (effectiveBrake) btnBrake.classList.add("active");
+        else btnBrake.classList.remove("active");
+      }
+      const btnPedal = document.getElementById("btnSimPedal");
+      if (btnPedal) {
+        if (effectivePedal) btnPedal.classList.add("active");
+        else btnPedal.classList.remove("active");
+      }
+
+    })
+    .catch(e => {
+      console.error("Failed to fetch hub data:", e);
+    });
+}
+setInterval(refreshHubData, 100);
+
+// Update effective states whenever sim states change
+document.getElementById("btnSimBrake").addEventListener("click", () => {
+  simBrakeActive = !simBrakeActive;
+  updateEffectiveStates();
+  renderJoystick(); // Re-render to reflect state changes visually
+});
+
+document.getElementById("btnSimPedal").addEventListener("click", () => {
+  simPedalActive = !simPedalActive;
+  updateEffectiveStates();
+  renderJoystick(); // Re-render to reflect state changes visually
+});
+
+// Initial setup and interval
+// Set initial effective states
+updateEffectiveStates();
+// Set initial slider value and label
+if (sliderGas && lblGas) {
+  lblGas.innerText = simGasPct + "%";
+  sliderGas.value = simGasPct;
+}
 
 function renderJoystick() {
   const modeEl = document.getElementById("joyMode");
@@ -1889,35 +1914,7 @@ document.getElementById("btnOk").addEventListener("click", () => {
   setTimeout(refreshHubData, 500);
 });
 
-function refreshHubData(forceSync = false) {
-  if (!forceSync && (isDirty || Date.now() < applyInProgressUntil)) return;
-  fetch("/status/sys")
-    .then(r => r.json())
-    .then(d => {
-      let serverMode = d.pas_en ? "pas" : (d.cruise_en ? "cruise" : "off");
-      let serverPasLvl = d.pas_lvl || 0;
-      let serverCruiseLvl = d.cruise_lvl || 0;
-      let serverCruiseEngaged = (d.cruise_engaged !== undefined) ? d.cruise_engaged : (serverMode === "cruise" && serverCruiseLvl > 0);
-
-      if (serverMode === "cruise" && activeMode === "cruise") {
-        simCruiseEngaged = serverCruiseEngaged;
-      }
-
-      if (serverMode !== activeMode || serverPasLvl !== activePasLvl || serverCruiseLvl !== activeCruiseLvl) {
-        activeMode = serverMode;
-        activePasLvl = serverPasLvl;
-        activeCruiseLvl = serverCruiseLvl;
-        if (!isDirty || forceSync) {
-          draftMode = (activeMode === "off") ? "pas" : activeMode;
-          draftPasLvl = activePasLvl;
-          draftCruiseLvl = activeCruiseLvl;
-          if (forceSync) isDirty = false;
-        }
-        renderJoystick();
-      }
-    })
-    .catch(() => {});
-}
+// Remove the duplicate function definition
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
@@ -1934,7 +1931,6 @@ window.addEventListener("focus", () => {
 });
 
 renderJoystick();
-setInterval(refreshHubData, 1500);
 </script>
 </body>
 </html>)rawliteral";
