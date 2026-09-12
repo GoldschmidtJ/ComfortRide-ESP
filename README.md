@@ -29,20 +29,42 @@
 
 ## 🚀 Начало работы и прошивка (Getting Started)
 
-### 1. Необходимые расширения и софт
-- **IDE:** [VS Code](https://code.visualstudio.com/) с расширениями **Arduino** / **PlatformIO** или **Arduino IDE (2.x+)**.
-- **Ядро ESP32:** Рекомендуется ядро версии `3.x` от Espressif.
+Проект собирается через **PlatformIO** — отдельная установка Arduino IDE не нужна.
 
-### 2. Настройка среды Arduino / VS Code
-1. В настройках добавьте ссылку для менеджера плат:
-   ```text
-   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-   ```
-2. Установите пакет **esp32 by Espressif Systems**.
-3. Выберите плату: `ESP32 Dev Module`.
-4. Параметры загрузки: Flash Frequency: `80MHz`, Upload Speed: `921600`.
+### 1. Установка PlatformIO
+
+- **VS Code:** установи расширение [PlatformIO IDE](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide) — оно само поставит PlatformIO Core.
+- **Только CLI (без VS Code):**
+  ```bash
+  pip install platformio        # или: brew install platformio
+  ```
+
+### 2. Сборка и прошивка
+
+Из корня проекта:
+
+```bash
+pio run                # собрать прошивку (env: esp32dev)
+pio run -t upload      # прошить плату по USB
+pio device monitor     # монитор порта, 115200 бод
+```
+
+Первый запуск скачает toolchain ESP32 и библиотеки из `lib_deps` — это занимает несколько минут, дальше сборка занимает ~15 секунд.
+
+### 3. Первый запуск платы
+
+1. Прошей плату (`pio run -t upload`).
+2. ESP32 поднимет точку доступа **BikeControllerAP** — подключись к ней со смартфона.
+3. Открой веб-интерфейс: `http://192.168.4.1` (или `http://bike-controller.local`).
+4. В разделе «Связь» задай SSID/пароль домашней Wi-Fi-сети, в разделе «Распиновка (GPIO)» — проверь/переназначь пины под свою разводку.
+5. Обновление по воздуху — страница `/update` (файл `.bin` из `.pio/build/esp32dev/firmware.bin`).
+
+### 4. CI
+
+При пуше в репозиторий GitHub Actions автоматически проверяет сборку (`pio run`) — см. `.github/workflows/ci.yml`.
 
 ---
+
 
 ## 📐 Схемы и подключение (Hardware Schematics)
 
