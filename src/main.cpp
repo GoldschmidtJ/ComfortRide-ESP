@@ -81,9 +81,14 @@ void pasSettingsLoad();
 void reattachPasInterrupt();
 void handleHub();
 void handleThrottlePage();
+void handleThrottleCalMin();
+void handleThrottleCalMax();
 void handleThrottleSave();
 void handlePasPage();
 void handlePasSave();
+void handlePasCalStart();
+void handlePasCalStatus();
+void handlePasCalStop();
 void handleApiPasSetLevel();
 void handleApiPasToggleMode();
 void handleApiCruiseToggleMode();
@@ -278,9 +283,13 @@ float applyCruiseSmoothing(float targetV) {
 
   if (!enabled || tau == 0) { cruiseSmoothOutV = targetV; return targetV; }
 
-  float alpha = 1.0f - expf(-(float)dt / (float)tau);
-  cruiseSmoothOutV += diff * alpha;
-  if (fabs(targetV - cruiseSmoothOutV) < 0.01f) cruiseSmoothOutV = targetV;
+  // Линейная рампа: за tau мс выход ГАРАНТИРОВАННО доходит до цели
+  // (экспонента за то же время давала лишь ~63%, ощущалось как лаг)
+  float step = diff * ((float)dt / (float)tau);
+  cruiseSmoothOutV += step;
+  if ((diff > 0 && cruiseSmoothOutV > targetV) || (diff < 0 && cruiseSmoothOutV < targetV)) {
+    cruiseSmoothOutV = targetV;
+  }
   return cruiseSmoothOutV;
 }
 
@@ -315,9 +324,12 @@ float applyThrottleSmoothing(float targetV) {
 
   if (!enabled || tau == 0) { throttleSmoothOutV = targetV; return targetV; }
 
-  float alpha = 1.0f - expf(-(float)dt / (float)tau);
-  throttleSmoothOutV += diff * alpha;
-  if (fabs(targetV - throttleSmoothOutV) < 0.01f) throttleSmoothOutV = targetV;
+  // Линейная рампа: за tau мс выход ГАРАНТИРОВАННО доходит до цели
+  float step = diff * ((float)dt / (float)tau);
+  throttleSmoothOutV += step;
+  if ((diff > 0 && throttleSmoothOutV > targetV) || (diff < 0 && throttleSmoothOutV < targetV)) {
+    throttleSmoothOutV = targetV;
+  }
   return throttleSmoothOutV;
 }
 
@@ -359,15 +371,25 @@ void throttleSettingsLoad() {
 int pasMagnetCount = 12;
 int pasEdgeMode = FALLING;
 int pasActivationAngle = 180;
-unsigned long pasTimeoutMs = 350;
+unsigned long pasTimeoutMs = 350;      // тайм-аут СБРОСА накопленных импульсов (долгий)
+unsigned long pasStopTimeoutMs = 200;  // тайм-аут ОТКЛЮЧЕНИЯ при остановке педалей (быстрый)
 
 volatile unsigned long pasLastPulseMicros = 0;
 volatile unsigned long pasConsecutivePulses = 0;
 bool pasConfirmedActive = false;
 
+extern float pasSmoothOutV; // определён ниже, в блоке мягкого старта/стопа
+extern volatile bool pasCalRunning;          // калибровка магнитов (определены ниже)
+extern volatile unsigned long pasCalPulses;
+extern volatile unsigned long pasCalLastPulseMicros;
+
 void IRAM_ATTR onPasPulse() {
   pasLastPulseMicros = micros();
   pasConsecutivePulses++;
+  if (pasCalRunning) {
+    pasCalPulses++;
+    pasCalLastPulseMicros = pasLastPulseMicros;
+  }
 }
 
 int pasRequiredPulses() {
@@ -378,11 +400,28 @@ int pasRequiredPulses() {
 
 void updatePasDetection() {
   unsigned long now = micros();
-  bool withinWindow = (pasLastPulseMicros != 0) && (now - pasLastPulseMicros < pasTimeoutMs * 1000UL);
-  if (!withinWindow) {
+  if (pasLastPulseMicros == 0) { pasConfirmedActive = false; return; }
+  unsigned long sincePulseUs = now - pasLastPulseMicros;
+
+  // После полной паузы начинаем новую последовательность импульсов.
+  if (sincePulseUs >= pasTimeoutMs * 1000UL) {
     pasConsecutivePulses = 0;
     pasConfirmedActive = false;
-  } else if (pasConsecutivePulses >= (unsigned long)pasRequiredPulses()) {
+    return;
+  }
+
+  // Остановка педалей: отключаем тягу быстро. Важно: пока действует этот
+  // тайм-аут, нельзя повторно выполнить условие активации по старому счётчику.
+  if (sincePulseUs >= pasStopTimeoutMs * 1000UL) {
+    if (pasConfirmedActive) {
+      pasConfirmedActive = false;
+      pasSmoothOutV = 0;
+    }
+    return;
+  }
+
+  // Только свежий импульсный поток может поддерживать/включать PAS.
+  if (pasConsecutivePulses >= (unsigned long)pasRequiredPulses()) {
     pasConfirmedActive = true;
   }
 }
@@ -394,6 +433,15 @@ void reattachPasInterrupt() {
   attachInterrupt(digitalPinToInterrupt(PAS_SENSOR_PIN), onPasPulse, pasEdgeMode);
   pasInterruptAttached = true;
 }
+
+// ================= PAS: калибровка количества магнитов =================
+// Пользователь проворачивает педали ровно на 2 полных оборота, считаются
+// импульсы датчика; pasMagnetCount = импульсы / 2.
+volatile bool pasCalRunning = false;
+volatile unsigned long pasCalPulses = 0;
+volatile unsigned long pasCalLastPulseMicros = 0;
+unsigned long pasCalStartMs = 0;
+const unsigned long PAS_CAL_TIMEOUT_MS = 60000; // авто-стоп калибровки через 60 с
 
 // ================= PAS: уровни (усилие в %, до 20 штук) =================
 const int PAS_MAX_LEVELS = 20;
@@ -430,9 +478,19 @@ float applyPasSmoothing(float targetV) {
 
   if (!enabled || tau == 0) { pasSmoothOutV = targetV; return targetV; }
 
-  float alpha = 1.0f - expf(-(float)dt / (float)tau);
-  pasSmoothOutV += diff * alpha;
-  if (fabs(targetV - pasSmoothOutV) < 0.01f) pasSmoothOutV = targetV;
+  // Мёртвая зона контроллера: пока выход ниже throttleOutMinV, мотор не крутится.
+  // При старте сразу прыгаем на нижнюю границу, чтобы не тратить время рампы
+  // на бесполезный участок 0В -> throttleOutMinV (раньше это давало лишнюю задержку).
+  float outMin = throttleOutMinV;
+  if (rising && pasSmoothOutV < outMin) pasSmoothOutV = outMin;
+
+  float diff2 = targetV - pasSmoothOutV;
+  if (diff2 <= 0) { pasSmoothOutV = targetV; return targetV; }
+
+  // Линейная рампа: за tau мс выход ГАРАНТИРОВАННО доходит до цели
+  float step = diff2 * ((float)dt / (float)tau);
+  pasSmoothOutV += step;
+  if (pasSmoothOutV > targetV) pasSmoothOutV = targetV;
   return pasSmoothOutV;
 }
 
@@ -452,6 +510,7 @@ void pasSettingsSave() {
   prefs.putInt("edge", pasEdgeMode);
   prefs.putInt("angle", pasActivationAngle);
   prefs.putULong("timeout", pasTimeoutMs);
+  prefs.putULong("stopTO", pasStopTimeoutMs);
   prefs.putInt("cnt", pasLevelsCount);
   prefs.putBytes("pct", pasLevelPercent, sizeof(pasLevelPercent));
   prefs.putInt("ssEn", pasSoftStartEnabled ? 1 : 0);
@@ -468,6 +527,8 @@ void pasSettingsLoad() {
   pasEdgeMode = prefs.getInt("edge", FALLING);
   pasActivationAngle = prefs.getInt("angle", 180);
   pasTimeoutMs = prefs.getULong("timeout", 350);
+  pasStopTimeoutMs = prefs.getULong("stopTO", 200);
+  if (pasStopTimeoutMs < 20) pasStopTimeoutMs = 20;
   pasLevelsCount = prefs.getInt("cnt", 3);
   size_t got = prefs.getBytes("pct", pasLevelPercent, sizeof(pasLevelPercent));
   pasSoftStartEnabled = prefs.getInt("ssEn", 0) != 0;
@@ -639,7 +700,10 @@ void setThrottleOutputSafeZero() {
 }
 
 void updateThrottle() {
-  bool brakePressed = ownBrakeCutoffEnabled && isBrakePressed();
+  // Физический тормоз всегда имеет приоритет над выходом газа.
+  // ownBrakeCutoffEnabled относится только к дополнительной программной
+  // функции; удержание throttleOutMinV никогда не должно работать при тормозе.
+  bool brakePressed = isBrakePressed();
 
   int raw = analogRead(THROTTLE_ADC_PIN);
   float adcPinV = raw * HW_MAX_VOLTAGE / 4095.0f;
@@ -718,11 +782,26 @@ void updateThrottle() {
   if (pasOutV > combinedV) combinedV = pasOutV;
   if (cruiseOutV > combinedV) combinedV = cruiseOutV;
 
+  // Если контроллер включён, но ни один режим не дал команды выше нуля,
+  // мы всё равно удерживаем выход на уровне throttleOutMinV (готовность),
+  // чтобы убрать задержку реакции контроллера на старт.
+  if (combinedV < throttleOutMinV) {
+    combinedV = throttleOutMinV;
+  }
+
   // Обновляем глобальные переменные телеметрии
   hwThrottleInV = realGripV;
   hwThrottleOutV = brakePressed ? 0.0f : combinedV;
   hwThrottlePct = throttlePct;
-  hwMotorOutPct = brakePressed ? 0.0f : combinedV / throttleOutMaxV * 100.0f;
+  // Процент мощности считаем относительно РАБОЧЕГО диапазона (outMin..outMax),
+  // иначе из-за удержания outMinV в простое телеметрия показывала бы ~27%.
+  {
+    float outSpan = throttleOutMaxV - throttleOutMinV;
+    float motorPct = (outSpan > 0.05f) ? ((combinedV - throttleOutMinV) / outSpan) * 100.0f : 0.0f;
+    if (motorPct < 0.0f) motorPct = 0.0f;
+    if (motorPct > 100.0f) motorPct = 100.0f;
+    hwMotorOutPct = brakePressed ? 0.0f : motorPct;
+  }
   hwBrakeActive = brakePressed;
   hwPasActive = pasConfirmedActive;
 
@@ -1330,6 +1409,8 @@ let userInteractingUntil = 0;
 let applyInProgressUntil = 0;
 let simCruiseEngaged = (activeMode === "cruise" && activeCruiseLvl > 0);
 let simCruisePendingResume = false;
+let simCruiseConfirmRequired = false;
+let simCruiseReleaseSeen = false;
 let arrowBounceUntil = 0;
 let arrowBounceDir = 0;
 
@@ -1349,6 +1430,12 @@ requestWakeLock();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') requestWakeLock();
 });
+
+function vib(pattern = 20) {
+  if (navigator.vibrate) {
+    try { navigator.vibrate(pattern); } catch (e) {}
+  }
+}
 
 function checkUiVisibility() {
   const showMatrix = localStorage.getItem("ui_show_matrix") !== "false";
@@ -1704,6 +1791,58 @@ function refreshHubData(forceSync = false) {
       // Update effective states
       updateEffectiveStates();
 
+      // State machine for cruise confirmation & engagement in UI
+      if (activeMode === "cruise" && activeCruiseLvl > 0) {
+        if (effectiveBrake) {
+          if (simCruiseEngaged || !simCruisePendingResume) {
+            if (cfgCruiseAfterBraking === 0) {
+              simCruiseEngaged = false;
+              simCruisePendingResume = false;
+            } else if (cfgCruiseAfterBraking === 1) {
+              simCruiseEngaged = false;
+              simCruisePendingResume = true;
+              simCruiseConfirmRequired = true;
+              simCruiseReleaseSeen = (simGasPct <= 10);
+            } else if (cfgCruiseAfterBraking === 2) {
+              simCruiseEngaged = false;
+              simCruisePendingResume = true;
+              simCruiseConfirmRequired = false;
+            }
+          }
+        } else {
+          if (simCruiseEngaged && simGasPct > 10) {
+            if (cfgCruiseAfterThrottle === 0) {
+              simCruiseEngaged = false;
+              simCruisePendingResume = false;
+            } else if (cfgCruiseAfterThrottle === 1) {
+              simCruiseEngaged = false;
+              simCruisePendingResume = true;
+              simCruiseConfirmRequired = true;
+              simCruiseReleaseSeen = false;
+            } else if (cfgCruiseAfterThrottle === 2) {
+              simCruiseEngaged = false;
+              simCruisePendingResume = true;
+              simCruiseConfirmRequired = false;
+            }
+          } else if (!simCruiseEngaged && simCruisePendingResume) {
+            if (simCruiseConfirmRequired) {
+              if (simGasPct <= 10) {
+                simCruiseReleaseSeen = true;
+              } else if (simCruiseReleaseSeen && simGasPct > 10) {
+                simCruiseEngaged = true;
+                simCruisePendingResume = false;
+                simCruiseConfirmRequired = false;
+              }
+            } else {
+              if (simGasPct <= 10) {
+                simCruiseEngaged = true;
+                simCruisePendingResume = false;
+              }
+            }
+          }
+        }
+      }
+
       // Update joystick mode and level display
       currentMode = d.pas_en ? "pas" : (d.cruise_en ? "cruise" : "off");
       currentPasLvl = d.pas_lvl || 0;
@@ -1715,15 +1854,20 @@ function refreshHubData(forceSync = false) {
       let serverCruiseLvl = currentCruiseLvl;
       let serverCruiseEngaged = currentCruiseEngaged;
 
-      if (serverMode === "cruise" && activeMode === "cruise") {
-        simCruiseEngaged = serverCruiseEngaged;
+      if (serverMode === "cruise") {
+        if (serverCruiseEngaged) {
+          simCruiseEngaged = true;
+          simCruisePendingResume = false;
+          simCruiseConfirmRequired = false;
+        }
       }
 
       if (serverMode !== activeMode || serverPasLvl !== activePasLvl || serverCruiseLvl !== activeCruiseLvl) {
         activeMode = serverMode;
         activePasLvl = serverPasLvl;
         activeCruiseLvl = serverCruiseLvl;
-        if (!isDirty || forceSync) {
+        let isUserBusy = isDirty || (Date.now() < userInteractingUntil) || (Date.now() < applyInProgressUntil);
+        if (!isUserBusy || forceSync) {
           draftMode = (activeMode === "off") ? "pas" : activeMode;
           draftPasLvl = activePasLvl;
           draftCruiseLvl = activeCruiseLvl;
@@ -2058,9 +2202,11 @@ void handleThrottlePage() {
 body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#111;color:#eee}
 label{display:block;margin-top:12px}input{width:100%;padding:6px;box-sizing:border-box;background:#222;color:#eee;border:1px solid #444}
 button{margin-top:15px;padding:10px;width:100%;font-size:16px}
+.cal-btn{background:#2c3e50;color:#fff;border:1px solid #34495e;padding:8px;margin-top:4px}
 .chk{display:flex;gap:8px;align-items:center;margin-top:12px}.chk input{width:auto}
 fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
 .warn{color:#ff8888;font-size:13px;margin-top:6px}
+#liveV{font-size:18px;font-weight:bold;color:#2ecc71;margin-bottom:10px;display:inline-block;padding:4px 8px;background:#222;border-radius:4px;border:1px solid #444}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
@@ -2069,10 +2215,19 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
 <form id="f">
 <fieldset><legend>Калибровка (в реальных вольтах на проводах)</legend>
 <p style="color:#888;font-size:13px">Это напряжение на самих проводах (ручка газа / вход контроллера), не на ножках ESP32 — делитель и усилитель уже всё пересчитывают сами.</p>
-<label>Вход мин, В (ручка газа в покое)</label><input type="number" step="0.05" min="0" max="5" name="inMinV" value=")rawliteral"; html += String(throttleInMinV, 2);
+<div>Текущее напряжение ручки газа: <span id="liveV">-- В</span></div>
+<p style="color:#888;font-size:13px;margin-top:0;">* В будущем планируется добавить автокалибровку выходного порога старта по датчику скорости (чтобы определять реальный вольтаж трогания велосипеда).</p>
+
+<label>Вход мин, В (ручка газа в покое)</label>
+<input type="number" step="0.01" min="0" max="5" id="inMinV" name="inMinV" value=")rawliteral"; html += String(throttleInMinV, 2);
   html += R"rawliteral(">
-<label>Вход макс, В (ручка на полном газу)</label><input type="number" step="0.05" min="0" max="5" name="inMaxV" value=")rawliteral"; html += String(throttleInMaxV, 2);
+<button type="button" class="cal-btn" onclick="calMin()">Захватить текущее как МИН (Отпусти ручку)</button>
+
+<label>Вход макс, В (ручка на полном газу)</label>
+<input type="number" step="0.01" min="0" max="5" id="inMaxV" name="inMaxV" value=")rawliteral"; html += String(throttleInMaxV, 2);
   html += R"rawliteral(">
+<button type="button" class="cal-btn" onclick="calMax()">Захватить текущее как МАКС (Выжми газ до упора)</button>
+
 <label>Выход мин, В (контроллер, холостой ход)</label><input type="number" step="0.05" min="0" max="5" name="outMinV" value=")rawliteral"; html += String(throttleOutMinV, 2);
   html += R"rawliteral(">
 <label>Выход макс, В (контроллер, полный газ)</label><input type="number" step="0.05" min="0" max="5" name="outMaxV" value=")rawliteral"; html += String(throttleOutMaxV, 2);
@@ -2101,7 +2256,7 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
 <div class="chk"><input type="checkbox" name="brakeCut" )rawliteral"; html += ownBrakeCutoffEnabled?"checked":"";
   html += R"rawliteral(><label>Дублировать отключение газа по тормозу (доп. к моторконтроллеру)</label></div>
 </fieldset>
-<button type="submit">Сохранить</button>
+<button type="submit" style="background:#27ae60;color:#fff;border:none;font-weight:bold">Сохранить</button>
 </form>
 <script>
 document.getElementById('f').addEventListener('submit',function(e){
@@ -2109,6 +2264,24 @@ document.getElementById('f').addEventListener('submit',function(e){
   const d=new FormData(this);
   fetch('/settings/throttle/save',{method:'POST',body:d}).then(()=>alert('Сохранено'));
 });
+function pollV(){
+  fetch('/status/sys').then(r=>r.json()).then(d=>{
+    if(d.gas_in_v!==undefined) document.getElementById('liveV').textContent = d.gas_in_v.toFixed(2)+' В';
+  }).catch(()=>{});
+}
+setInterval(pollV, 200);
+pollV();
+
+function calMin(){
+  fetch('/settings/throttle/cal_min',{method:'POST'}).then(r=>r.json()).then(d=>{
+    document.getElementById('inMinV').value = d.val.toFixed(2);
+  });
+}
+function calMax(){
+  fetch('/settings/throttle/cal_max',{method:'POST'}).then(r=>r.json()).then(d=>{
+    document.getElementById('inMaxV').value = d.val.toFixed(2);
+  });
+}
 </script>
 )rawliteral" + getTopBarJs() + R"rawliteral(
 </body></html>
@@ -2116,11 +2289,37 @@ document.getElementById('f').addEventListener('submit',function(e){
   server.send(200, "text/html", html);
 }
 
+void handleThrottleCalMin() {
+  throttleInMinV = hwThrottleInV;
+  // Защита: МИН не должен подниматься выше МАКС (иначе калибровка сломается)
+  if (throttleInMaxV > 0.2f && throttleInMinV > throttleInMaxV - 0.1f)
+    throttleInMinV = throttleInMaxV - 0.1f;
+  throttleSettingsSave();
+  server.send(200, "application/json", "{\"val\":" + String(throttleInMinV, 2) + "}");
+}
+
+void handleThrottleCalMax() {
+  throttleInMaxV = hwThrottleInV;
+  if (throttleInMaxV < throttleInMinV + 0.1f) throttleInMaxV = throttleInMinV + 0.1f;
+  throttleSettingsSave();
+  server.send(200, "application/json", "{\"val\":" + String(throttleInMaxV, 2) + "}");
+}
+
 void handleThrottleSave() {
-  throttleInMinV = server.arg("inMinV").toFloat();
-  throttleInMaxV = server.arg("inMaxV").toFloat();
-  throttleOutMinV = server.arg("outMinV").toFloat();
-  throttleOutMaxV = server.arg("outMaxV").toFloat();
+  throttleInMinV = constrain(server.arg("inMinV").toFloat(), 0.0f, 5.0f);
+  throttleInMaxV = constrain(server.arg("inMaxV").toFloat(), 0.0f, 5.0f);
+  if (throttleInMaxV < throttleInMinV + 0.1f) throttleInMaxV = throttleInMinV + 0.1f;
+  if (throttleInMaxV > 5.0f) {
+    throttleInMaxV = 5.0f;
+    throttleInMinV = min(throttleInMinV, throttleInMaxV - 0.1f);
+  }
+  throttleOutMinV = constrain(server.arg("outMinV").toFloat(), 0.0f, 5.0f);
+  throttleOutMaxV = constrain(server.arg("outMaxV").toFloat(), 0.0f, 5.0f);
+  if (throttleOutMaxV < throttleOutMinV + 0.1f) throttleOutMaxV = throttleOutMinV + 0.1f;
+  if (throttleOutMaxV > 5.0f) {
+    throttleOutMaxV = 5.0f;
+    throttleOutMinV = min(throttleOutMinV, throttleOutMaxV - 0.1f);
+  }
   float newDivRatio = server.arg("divRatio").toFloat();
   if (newDivRatio > 0.05f && newDivRatio <= 1.0f) throttleInputDividerRatio = newDivRatio;
   float newGain = server.arg("gain").toFloat();
@@ -2182,6 +2381,16 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
 </select>
 <label>Тайм-аут импульса (мс)</label><input type="number" name="timeout" value=")rawliteral"; html += String(pasTimeoutMs);
   html += R"rawliteral(">
+<label>Тайм-аут отключения при остановке педалей (мс)</label><input type="number" name="stopTO" value=")rawliteral"; html += String(pasStopTimeoutMs);
+  html += R"rawliteral(">
+<p style="color:#888;font-size:13px">Первый — как долго счётчик импульсов «помнит» вращение (медленное педалирование не сбрасывает). Второй — как быстро тяга отключается, когда педали остановились.</p>
+</fieldset>
+
+<fieldset><legend>Калибровка магнитов</legend>
+<p style="color:#888;font-size:13px">Нажми «Старт», проверни педали ровно на 2 полных оборота, затем нажми «Готово» (или подожди 3 с после остановки — калибровка завершится сама). Количество магнитов будет посчитано и сохранено.</p>
+<button type="button" onclick="calStart()">Старт</button>
+<button type="button" onclick="calStop()">Готово</button>
+<div id="calStat" style="margin-top:8px;font-weight:bold">—</div>
 </fieldset>
 
 <fieldset><legend>Уровни усилия (0-)rawliteral"; html += String(PAS_MAX_LEVELS); html += R"rawliteral()</legend>
@@ -2228,6 +2437,36 @@ document.getElementById('f').addEventListener('submit',function(e){
   const d=new FormData(this);
   fetch('/settings/pas/save',{method:'POST',body:d}).then(()=>alert('Сохранено'));
 });
+let calTimer=null;
+function calStart(){
+  fetch('/settings/pas/cal_start').then(()=>{
+    calTimer=setInterval(calPoll,250);
+    document.getElementById('calStat').textContent='Крути педали ровно 2 оборота...';
+  });
+}
+function calStop(){
+  fetch('/settings/pas/cal_stop').then(r=>r.json()).then(d=>{
+    if(calTimer){clearInterval(calTimer);calTimer=null;}
+    if(d.finished){
+      document.getElementById('calStat').textContent='Импульсов: '+d.pulses+' → магнитов: '+d.magnets+' (сохранено)';
+      const m=document.getElementsByName('magnets')[0]; if(m) m.value=d.magnets;
+    } else {
+      document.getElementById('calStat').textContent='Калибровка не запущена';
+    }
+  });
+}
+function calPoll(){
+  fetch('/settings/pas/cal_status').then(r=>r.json()).then(d=>{
+    if(d.finished){
+      if(calTimer){clearInterval(calTimer);calTimer=null;}
+      document.getElementById('calStat').textContent='Импульсов: '+d.pulses+' → магнитов: '+d.magnets+' (сохранено)';
+      const m=document.getElementsByName('magnets')[0]; if(m) m.value=d.magnets;
+    } else if(d.running){
+      const estM = (d.pulses/2).toFixed(1);
+      document.getElementById('calStat').textContent='Прошло магнитов/импульсов: '+d.pulses+' → оценка магнитов после 2 оборотов: ~'+estM+' — продолжай до 2 оборотов';
+    }
+  });
+}
 </script>
 )rawliteral" + getTopBarJs() + R"rawliteral(
 </body></html>
@@ -2243,6 +2482,8 @@ void handlePasSave() {
   pasEdgeMode = newEdge;
   pasActivationAngle = server.arg("angle").toInt();
   pasTimeoutMs = server.arg("timeout").toInt();
+  pasStopTimeoutMs = server.arg("stopTO").toInt();
+  if (pasStopTimeoutMs < 20) pasStopTimeoutMs = 20;
 
   int count = server.arg("count").toInt();
   if (count < 0) count = 0;
@@ -2267,6 +2508,54 @@ void handlePasSave() {
   pasSettingsSave();
   if (edgeChanged) reattachPasInterrupt();
   server.send(200, "text/plain", "OK");
+}
+
+// ================= Веб: калибровка магнитов PAS =================
+// Завершает калибровку: magnets = импульсы / 2 (2 полных оборота педалей).
+String pasCalFinishAndJson() {
+  pasCalRunning = false;
+  unsigned long pulses = pasCalPulses;
+  int magnets = (int)(pulses / 2);
+  if (magnets < 1) magnets = 1;
+  pasMagnetCount = magnets;
+  pasSettingsSave();
+  String json = "{\"finished\":true,\"pulses\":" + String(pulses) +
+                ",\"magnets\":" + String(magnets) + "}";
+  return json;
+}
+
+void handlePasCalStart() {
+  pasCalPulses = 0;
+  pasCalLastPulseMicros = 0;
+  pasCalStartMs = millis();
+  pasCalRunning = true;
+  server.send(200, "text/plain", "OK");
+}
+
+void handlePasCalStatus() {
+  if (pasCalRunning) {
+    // Авто-завершение: 3 с без импульсов (педали встали) или общий тайм-аут 60 с
+    bool idleDone = pasCalPulses > 0 && pasCalLastPulseMicros != 0 &&
+                    (micros() - pasCalLastPulseMicros) > 3000000UL;
+    bool timeoutDone = (millis() - pasCalStartMs) > PAS_CAL_TIMEOUT_MS;
+    if (idleDone || timeoutDone) {
+      server.send(200, "application/json", pasCalFinishAndJson());
+      return;
+    }
+    String json = "{\"running\":true,\"pulses\":" + String(pasCalPulses) +
+                  ",\"estimatedMagnets\":" + String((float)pasCalPulses / 2.0f, 1) + "}";
+    server.send(200, "application/json", json);
+  } else {
+    server.send(200, "application/json", "{\"running\":false}");
+  }
+}
+
+void handlePasCalStop() {
+  if (pasCalRunning) {
+    server.send(200, "application/json", pasCalFinishAndJson());
+  } else {
+    server.send(200, "application/json", "{\"finished\":false,\"running\":false}");
+  }
 }
 
 // ================= Веб: заливка прошивки прямо через браузер =================
@@ -2481,8 +2770,13 @@ void setup() {
   server.on("/api/cruise/toggle", HTTP_GET, handleApiCruiseToggleMode);
   server.on("/settings/throttle", handleThrottlePage);
   server.on("/settings/throttle/save", HTTP_POST, handleThrottleSave);
+  server.on("/settings/throttle/cal_min", HTTP_POST, handleThrottleCalMin);
+  server.on("/settings/throttle/cal_max", HTTP_POST, handleThrottleCalMax);
   server.on("/settings/pas", handlePasPage);
   server.on("/settings/pas/save", HTTP_POST, handlePasSave);
+  server.on("/settings/pas/cal_start", HTTP_GET, handlePasCalStart);
+  server.on("/settings/pas/cal_status", HTTP_GET, handlePasCalStatus);
+  server.on("/settings/pas/cal_stop", HTTP_GET, handlePasCalStop);
   server.on("/wifi/ap/save", HTTP_POST, handleApSave);
   server.on("/wifi", handleWifiPage);
   server.on("/wifi/scan", handleWifiScan);
@@ -2937,6 +3231,7 @@ void handleSettingsExport() {
   json += "\"edge\":" + String(pasEdgeMode) + ",";
   json += "\"angle\":" + String(pasActivationAngle) + ",";
   json += "\"timeout\":" + String(pasTimeoutMs) + ",";
+  json += "\"stopTO\":" + String(pasStopTimeoutMs) + ",";
   json += "\"cnt\":" + String(pasLevelsCount) + ",";
   json += "\"curLvl\":" + String(pasCurrentLevel) + ",";
   json += "\"ssEn\":" + String(pasSoftStartEnabled ? 1 : 0) + ",";
@@ -3045,6 +3340,10 @@ void handleSettingsImport() {
       pasActivationAngle = pasJson.substring(anglePos + 8, pasJson.indexOf(',', anglePos)).toInt();
     if (pasJson.indexOf("\"timeout\":") != -1)
       pasTimeoutMs = pasJson.substring(pasJson.indexOf("\"timeout\":") + 10, pasJson.indexOf(',', pasJson.indexOf("\"timeout\":"))).toInt();
+    if (pasJson.indexOf("\"stopTO\":") != -1) {
+      pasStopTimeoutMs = pasJson.substring(pasJson.indexOf("\"stopTO\":") + 9, pasJson.indexOf(',', pasJson.indexOf("\"stopTO\":"))).toInt();
+      if (pasStopTimeoutMs < 20) pasStopTimeoutMs = 20;
+    }
     if (pasJson.indexOf("\"cnt\":") != -1)
       pasLevelsCount = pasJson.substring(pasJson.indexOf("\"cnt\":") + 6, pasJson.indexOf(',', pasJson.indexOf("\"cnt\":"))).toInt();
     if (pasJson.indexOf("\"curLvl\":") != -1)
