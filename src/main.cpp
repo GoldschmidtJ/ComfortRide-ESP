@@ -866,23 +866,162 @@ const int lightButtonsCount = sizeof(lightButtons) / sizeof(lightButtons[0]);
 
 // ================= Конструктор событий =================
 #define EVENT_MAX_RULES 8
-enum EventTrigger { EV_BRAKE_PRESS=1, EV_BRAKE_RELEASE, EV_BRAKE_HOLD };
+enum EventTrigger { EV_BRAKE_PRESS=1, EV_BRAKE_RELEASE, EV_BRAKE_HOLD, EV_BTN_HEADLIGHT, EV_BTN_TURN_L, EV_BTN_TURN_R, EV_BTN_HORN, EV_BTN_PAS, EV_PAS_LEVEL, EV_PAS_ON, EV_PAS_OFF, EV_CRUISE_ON, EV_CRUISE_OFF, EV_BOOT };
+#define EV_TRIGGER_MAX 14
 enum EventCondition { EV_NONE=0, EV_PRESS_COUNT, EV_HOLD_MS };
 enum EventAction { EV_NO_ACTION=0, EV_SERVICE_TOGGLE, EV_SERVICE_ON, EV_SERVICE_OFF, EV_LIGHT_TOGGLE, EV_DRL_TOGGLE, EV_TURN_L_TOGGLE, EV_TURN_R_TOGGLE, EV_HORN_BEEP, EV_BUZZER_BEEP, EV_PAS_SET_LEVEL, EV_PAS_TOGGLE };
-struct EventRule { uint8_t enabled, trigger, condition, priority; uint16_t count; uint32_t intervalMs; uint8_t action; int16_t actionValue; };
-const EventRule EVENT_DEFAULTS[EVENT_MAX_RULES] = {{1,EV_BRAKE_PRESS,EV_PRESS_COUNT,0,5,700,EV_SERVICE_TOGGLE,30}};
+#define EVENT_MAX_ACTIONS 3 // до 3 результатов на правило
+struct EventRule { uint8_t enabled, trigger, condition, priority; uint16_t count; uint32_t intervalMs; uint8_t actions[EVENT_MAX_ACTIONS]; int16_t actionValues[EVENT_MAX_ACTIONS]; };
+// Старый формат (одно действие на правило) — только для миграции сохранённых правил.
+struct EventRuleV1 { uint8_t enabled, trigger, condition, priority; uint16_t count; uint32_t intervalMs; uint8_t action; int16_t actionValue; };
+const EventRule EVENT_DEFAULTS[EVENT_MAX_RULES] = {{1,EV_BRAKE_PRESS,EV_PRESS_COUNT,0,5,700,{EV_SERVICE_TOGGLE},{30}}};
 EventRule eventRules[EVENT_MAX_RULES];
 struct EventRuntime { uint16_t count; unsigned long lastPress, lastFire; bool holdFired; } eventRuntime[EVENT_MAX_RULES];
 struct EventLog { unsigned long at; uint8_t rule; } eventLog[10];
 int eventLogHead=0,eventLogCount=0;
 void eventLogAdd(uint8_t i){eventLog[eventLogHead]={(unsigned long)millis(),i};eventLogHead=(eventLogHead+1)%10;if(eventLogCount<10)eventLogCount++;}
 void eventSettingsSave(){Preferences p;p.begin("events",false);p.putBytes("rules",eventRules,sizeof(eventRules));p.end();}
-void eventSettingsLoad(){Preferences p;p.begin("events",true);size_t n=p.getBytes("rules",eventRules,sizeof(eventRules));p.end();if(n!=sizeof(eventRules))memcpy(eventRules,EVENT_DEFAULTS,sizeof(eventRules));}
+void eventSettingsLoad(){
+  Preferences p;p.begin("events",true);
+  size_t n=p.getBytesLength("rules");
+  if(n==sizeof(eventRules)){p.getBytes("rules",eventRules,sizeof(eventRules));p.end();return;}
+  if(n==sizeof(EventRuleV1)*EVENT_MAX_RULES){
+    // Миграция старого формата: единственное действие переносится в слот 0.
+    EventRuleV1 old[EVENT_MAX_RULES];
+    p.getBytes("rules",old,sizeof(old));p.end();
+    memset(eventRules,0,sizeof(eventRules));
+    for(int i=0;i<EVENT_MAX_RULES;i++){
+      EventRule &r=eventRules[i];EventRuleV1 &o=old[i];
+      r.enabled=o.enabled;r.trigger=o.trigger;r.condition=o.condition;r.priority=o.priority;
+      r.count=o.count;r.intervalMs=o.intervalMs;
+      r.actions[0]=o.action;r.actionValues[0]=o.actionValue;
+    }
+    eventSettingsSave(); // сразу пересохраняем в новом формате
+    return;
+  }
+  p.end();
+  memcpy(eventRules,EVENT_DEFAULTS,sizeof(eventRules));
+}
 void eventSettingsReset(){memcpy(eventRules,EVENT_DEFAULTS,sizeof(eventRules));eventSettingsSave();}
 void serviceModeApply(bool on){if(serviceModeActive==on)return;serviceModeActive=on;if(on){if(pasCurrentLevel>1)pasCurrentLevel=1;cruiseEnabled=false;cruiseCurrentLevel=0;cruiseEngaged=false;cruisePendingResume=false;buzzerPattern(3);}else buzzerPattern(2);}
 void eventExecute(uint8_t a,int16_t v){switch(a){case EV_SERVICE_TOGGLE:serviceModeApply(!serviceModeActive);break;case EV_SERVICE_ON:serviceModeApply(true);break;case EV_SERVICE_OFF:serviceModeApply(false);break;case EV_LIGHT_TOGGLE:toggleHeadlight();break;case EV_DRL_TOGGLE:toggleDrl();break;case EV_TURN_L_TOGGLE:toggleTurnLeft();break;case EV_TURN_R_TOGGLE:toggleTurnRight();break;case EV_HORN_BEEP:hornBeep(v>0?v:300);break;case EV_BUZZER_BEEP:buzzerClick(v>0?v:150);break;case EV_PAS_SET_LEVEL:pasCurrentLevel=constrain(v,0,pasLevelsCount);pasEnabled=pasCurrentLevel>0;break;case EV_PAS_TOGGLE:pasEnabled=!pasEnabled;if(!pasEnabled)pasCurrentLevel=0;else if(!pasCurrentLevel)pasCurrentLevel=1;break;default:break;}}
-void eventFire(int i){unsigned long n=millis();if(n-eventRuntime[i].lastFire<300)return;eventRuntime[i].lastFire=n;eventExecute(eventRules[i].action,eventRules[i].actionValue);eventLogAdd(i);}
-void updateEventEngine(){static bool lastBrake=false;static unsigned long down=0;bool brake=isBrakePressed();unsigned long n=millis();if(brake&&!lastBrake){down=n;for(int i=0;i<EVENT_MAX_RULES;i++){EventRule&r=eventRules[i];if(!r.enabled)continue;if(r.trigger==EV_BRAKE_PRESS&&r.condition==EV_PRESS_COUNT){if(n-eventRuntime[i].lastPress>r.intervalMs)eventRuntime[i].count=0;eventRuntime[i].count++;eventRuntime[i].lastPress=n;if(eventRuntime[i].count>=r.count){eventFire(i);eventRuntime[i].count=0;}}else if(r.trigger==EV_BRAKE_PRESS&&r.condition==EV_NONE)eventFire(i);}}if(!brake&&lastBrake)for(int i=0;i<EVENT_MAX_RULES;i++)if(eventRules[i].enabled&&eventRules[i].trigger==EV_BRAKE_RELEASE)eventFire(i);for(int i=0;i<EVENT_MAX_RULES;i++){EventRule&r=eventRules[i];if(!r.enabled||r.trigger!=EV_BRAKE_HOLD||r.condition!=EV_HOLD_MS)continue;if(brake&&!eventRuntime[i].holdFired&&n-down>=r.intervalMs){eventRuntime[i].holdFired=true;eventFire(i);}if(!brake)eventRuntime[i].holdFired=false;}lastBrake=brake;}
+void eventFire(int i){unsigned long n=millis();if(n-eventRuntime[i].lastFire<300)return;eventRuntime[i].lastFire=n;for(int k=0;k<EVENT_MAX_ACTIONS;k++)if(eventRules[i].actions[k]!=EV_NO_ACTION)eventExecute(eventRules[i].actions[k],eventRules[i].actionValues[k]);eventLogAdd(i);}
+// Обработка фронта нажатия: без условия — сразу, с серией — счётчик в окне intervalMs.
+// Условие EV_HOLD_MS здесь игнорируется: удержание считает отдельный хелпер.
+static void eventHandlePressEdge(int i, unsigned long n) {
+  EventRule &r = eventRules[i];
+  if (r.condition == EV_HOLD_MS) return;
+  if (r.condition == EV_PRESS_COUNT) {
+    if (n - eventRuntime[i].lastPress > r.intervalMs) eventRuntime[i].count = 0;
+    eventRuntime[i].count++;
+    eventRuntime[i].lastPress = n;
+    if (eventRuntime[i].count >= r.count) { eventFire(i); eventRuntime[i].count = 0; }
+  } else {
+    eventFire(i);
+  }
+}
+
+// Обработка удержания: срабатывает один раз через intervalMs, сброс при отпускании.
+static void eventHandleHold(int i, unsigned long n, bool active, unsigned long activeSince) {
+  EventRule &r = eventRules[i];
+  if (r.condition != EV_HOLD_MS) return;
+  if (active) {
+    if (!eventRuntime[i].holdFired && n - activeSince >= r.intervalMs) { eventRuntime[i].holdFired = true; eventFire(i); }
+  } else {
+    eventRuntime[i].holdFired = false;
+  }
+}
+
+// Срабатывание всех включённых правил с данным триггером и условием EV_NONE.
+static void eventFireTrigger(uint8_t trig) {
+  for (int i = 0; i < EVENT_MAX_RULES; i++) {
+    EventRule &r = eventRules[i];
+    if (r.enabled && r.trigger == trig && r.condition == EV_NONE) eventFire(i);
+  }
+}
+
+void updateEventEngine() {
+  static bool lastBrake = false, booted = false, stateInitialized = false;
+  static int lastPasLevel = 0;
+  static bool lastPasEnabled = false, lastCruiseEnabled = false;
+  static unsigned long down = 0;
+  static const int btnPins[5] = { BTN_HEADLIGHT_PIN, BTN_TURN_LEFT_PIN, BTN_TURN_RIGHT_PIN, BTN_HORN_PIN, PAS_BUTTON_PIN };
+  static int btnLast[5] = {HIGH, HIGH, HIGH, HIGH, HIGH}, btnStable[5] = {HIGH, HIGH, HIGH, HIGH, HIGH};
+  static bool btnPrevActive[5] = {false, false, false, false, false};
+  static unsigned long btnDeb[5] = {0, 0, 0, 0, 0};
+  unsigned long n = millis();
+
+  // Boot: однократное срабатывание при старте основного цикла
+  if (!booted) { booted = true; eventFireTrigger(EV_BOOT); }
+
+  // --- Тормоз ---
+  bool brake = isBrakePressed();
+  if (brake && !lastBrake) {
+    down = n;
+    for (int i = 0; i < EVENT_MAX_RULES; i++) {
+      EventRule &r = eventRules[i];
+      if (r.enabled && r.trigger == EV_BRAKE_PRESS) eventHandlePressEdge(i, n);
+    }
+  }
+  if (!brake && lastBrake) eventFireTrigger(EV_BRAKE_RELEASE);
+  for (int i = 0; i < EVENT_MAX_RULES; i++) {
+    EventRule &r = eventRules[i];
+    if (r.enabled && r.trigger == EV_BRAKE_HOLD) eventHandleHold(i, n, brake, down);
+  }
+  lastBrake = brake;
+
+  // --- Физические кнопки (фара, поворотники, гудок, PAS) с дебаунсом ---
+  for (int b = 0; b < 5; b++) {
+    uint8_t trig = EV_BTN_HEADLIGHT + b;
+    int reading = digitalRead(btnPins[b]);
+    if (reading != btnLast[b]) btnDeb[b] = n;
+    bool active = (btnStable[b] == LOW);
+    if (n - btnDeb[b] > DEBOUNCE_MS && reading != btnStable[b]) {
+      btnStable[b] = reading;
+      active = (reading == LOW);
+      if (active) { // фронт нажатия
+        for (int i = 0; i < EVENT_MAX_RULES; i++) {
+          EventRule &r = eventRules[i];
+          if (r.enabled && r.trigger == trig) eventHandlePressEdge(i, n);
+        }
+      }
+    }
+    btnLast[b] = reading;
+    // Кнопочный триггер означает именно фронт нажатия; отпускание не является
+    // отдельным событием (в отличие от EV_BRAKE_RELEASE).
+    for (int i = 0; i < EVENT_MAX_RULES; i++) {
+      EventRule &r = eventRules[i];
+      if (r.enabled && r.trigger == trig) eventHandleHold(i, n, active, btnDeb[b]);
+    }
+    btnPrevActive[b] = active;
+  }
+
+  // Не считать исходное состояние после запуска событием включения/выключения.
+  if (!stateInitialized) {
+    lastPasLevel = pasCurrentLevel;
+    lastPasEnabled = pasEnabled;
+    lastCruiseEnabled = cruiseEnabled;
+    stateInitialized = true;
+  }
+
+  // --- PAS: уровень, включение, выключение ---
+  if (pasCurrentLevel != lastPasLevel) {
+    int lvl = pasCurrentLevel;
+    lastPasLevel = lvl;
+    for (int i = 0; i < EVENT_MAX_RULES; i++) {
+      EventRule &r = eventRules[i];
+      if (r.enabled && r.trigger == EV_PAS_LEVEL && (int)r.count == lvl && r.condition == EV_NONE) eventFire(i);
+    }
+  }
+  if (pasEnabled && !lastPasEnabled) eventFireTrigger(EV_PAS_ON);
+  if (!pasEnabled && lastPasEnabled) eventFireTrigger(EV_PAS_OFF);
+  lastPasEnabled = pasEnabled;
+
+  // --- Круиз: включение, выключение ---
+  if (cruiseEnabled && !lastCruiseEnabled) eventFireTrigger(EV_CRUISE_ON);
+  if (!cruiseEnabled && lastCruiseEnabled) eventFireTrigger(EV_CRUISE_OFF);
+  lastCruiseEnabled = cruiseEnabled;
+}
 
 void updateLightButtons() {
   for (int i = 0; i < lightButtonsCount; i++) {
@@ -2521,7 +2660,13 @@ document.getElementById("btnDown").addEventListener("click", () => {
   renderJoystick();
 });
 
-document.getElementById("btnOk").addEventListener("click", () => {
+function applyJoystickDraft(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  // The emulator is also used on touch screens. Do not reject a legitimate
+  // press because a previous refresh request is still pending.
   vib();
   if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
   if (draftMode === "settings") {
@@ -2529,8 +2674,10 @@ document.getElementById("btnOk").addEventListener("click", () => {
     renderJoystick();
     return;
   }
+
   let targetMode = draftMode;
   let targetLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
+  let requestMode = targetLvl === 0 ? "off" : targetMode;
 
   if (targetLvl === 0) {
     activeMode = "off";
@@ -2567,18 +2714,26 @@ document.getElementById("btnOk").addEventListener("click", () => {
   applyInProgressUntil = Date.now() + 1500;
   renderJoystick();
 
-  fetch("/api/joystick/apply?mode=" + encodeURIComponent(targetMode) + "&level=" + targetLvl)
+  fetch("/api/joystick/apply?mode=" + encodeURIComponent(requestMode) + "&level=" + targetLvl)
     .then(res => {
-      if (res.ok) {
-        setTimeout(refreshHubData, 200);
-      }
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setTimeout(refreshHubData, 200);
     })
     .catch(err => {
       console.warn("Apply mode error:", err);
+      applyInProgressUntil = 0;
+      const statusEl = document.getElementById("joyStatus");
+      if (statusEl) {
+        statusEl.innerText = "ОШИБКА ПРИМЕНЕНИЯ: " + err.message;
+        statusEl.className = "screen-status dirty";
+      }
+      renderJoystick();
     });
 
   setTimeout(refreshHubData, 500);
-});
+}
+
+document.getElementById("btnOk").addEventListener("click", applyJoystickDraft, false);
 
 // Remove the duplicate function definition
 
@@ -3347,7 +3502,6 @@ void criticalControlTask(void *pvParameters) {
     cpuUsPasBtn += micros() - secStart;
 
     secStart = micros();
-    updateEventEngine();
     updateThrottle();
     cpuUsThrottle += micros() - secStart;
 
@@ -3355,6 +3509,12 @@ void criticalControlTask(void *pvParameters) {
     secStart = micros();
     updateLightButtons();
     cpuUsLight += micros() - secStart;
+
+    // События обрабатываются после штатных кнопок, чтобы действие правила
+    // не было отменено штатным toggle в том же цикле.
+    secStart = micros();
+    updateEventEngine();
+    cpuUsThrottle += micros() - secStart;
 
     secStart = micros();
     updateTurnSignals();
@@ -3727,17 +3887,71 @@ void handlePinsReset() {
 
 // ================= Веб: конструктор событий =================
 void handleEventsPage() {
-  String html=R"rawliteral(<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>События</title><style>)rawliteral"+getTopBarCss()+getSettingsCss()+R"rawliteral(.rule{background:var(--ui-card);border:1px solid var(--ui-border);padding:12px;border-radius:8px;margin:12px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log{font-size:13px;color:var(--ui-muted)}@media(max-width:420px){.grid{grid-template-columns:1fr}}</style></head><body>)rawliteral"+getTopBarHtml()+R"rawliteral(<p><a class="back" href="/">&larr; Меню</a></p><h1>Конструктор событий</h1><p class="hint">Правила применяются сразу, без перезагрузки. Аппаратный тормоз, нулевой fail-safe, watchdog и максимальный предел газа правилами не изменяются.</p><form method="POST" action="/settings/events/save">)rawliteral";
-  const char* trig[] = {"-","Тормоз: нажатие","Тормоз: отпускание","Тормоз: удержание"};
+  String html=R"rawliteral(<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>События</title><style>)rawliteral"+getTopBarCss()+getSettingsCss()+R"rawliteral(.rule{background:var(--ui-card);border:1px solid var(--ui-border);padding:12px;border-radius:8px;margin:12px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log{font-size:13px;color:var(--ui-muted)}@media(max-width:420px){.grid{grid-template-columns:1fr}}.acts{margin-top:8px}.act{display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap}.act button{padding:2px 8px}</style></head><body>)rawliteral"+getTopBarHtml()+R"rawliteral(<p><a class="back" href="/">&larr; Меню</a></p><h1>Конструктор событий</h1><p class="hint">Правила применяются сразу, без перезагрузки. Аппаратный тормоз, нулевой fail-safe, watchdog и максимальный предел газа правилами не изменяются.</p><form method="POST" action="/settings/events/save">)rawliteral";
+  const char* trig[] = {"-","Тормоз: нажатие","Тормоз: отпускание","Тормоз: удержание","Кнопка: фара","Кнопка: левый поворотник","Кнопка: правый поворотник","Кнопка: гудок","Кнопка: PAS","PAS: достигнут уровень","PAS: включён","PAS: выключен","Круиз: включён","Круиз: выключен","Загрузка (boot)"};
   const char* cond[] = {"Без условия","Серия нажатий","Удержание, мс"};
   const char* acts[] = {"Нет","Сервис: переключить","Сервис: включить","Сервис: выключить","Фара: переключить","ДХО: переключить","Левый поворотник","Правый поворотник","Гудок","Пищалка","PAS: установить уровень","PAS: переключить"};
-  for(int i=0;i<EVENT_MAX_RULES;i++){EventRule&r=eventRules[i];html+="<div class=\"rule\"><b>Правило "+String(i+1)+"</b><label class=\"chk\"><input type=\"checkbox\" name=\"en"+String(i)+"\" "+(r.enabled?"checked":"")+"><span>Включено</span></label><div class=\"grid\"><label>Триггер<select name=\"tr"+String(i)+"\">";for(int x=0;x<4;x++)html+="<option value=\""+String(x)+"\" "+(r.trigger==x?"selected":"")+">"+trig[x]+"</option>";html+="</select></label><label>Условие<select name=\"co"+String(i)+"\">";for(int x=0;x<3;x++)html+="<option value=\""+String(x)+"\" "+(r.condition==x?"selected":"")+">"+cond[x]+"</option>";html+="</select></label><label>Количество<input type=\"number\" min=\"1\" max=\"20\" name=\"ct"+String(i)+"\" value=\""+String(r.count?r.count:1)+"\"></label><label>Интервал / удержание, мс<input type=\"number\" min=\"50\" max=\"60000\" name=\"ms"+String(i)+"\" value=\""+String(r.intervalMs?r.intervalMs:700)+"\"></label><label>Действие<select name=\"ac"+String(i)+"\">";for(int x=0;x<12;x++)html+="<option value=\""+String(x)+"\" "+(r.action==x?"selected":"")+">"+acts[x]+"</option>";html+="</select></label><label>Значение<input type=\"number\" min=\"0\" max=\"60000\" name=\"va"+String(i)+"\" value=\""+String(r.actionValue)+"\"></label><label>Приоритет<input type=\"number\" min=\"0\" max=\"255\" name=\"pr"+String(i)+"\" value=\""+String(r.priority)+"\"></label></div></div>";}
+  for(int i=0;i<EVENT_MAX_RULES;i++){
+    EventRule&r=eventRules[i];
+    html+="<div class=\"rule\"><b>Правило "+String(i+1)+"</b><label class=\"chk\"><input type=\"checkbox\" name=\"en"+String(i)+"\" "+(r.enabled?"checked":"")+"><span>Включено</span></label><div class=\"grid\">";
+    html+="<label>Триггер<select name=\"tr"+String(i)+"\">";
+    for(int x=0;x<15;x++)html+="<option value=\""+String(x)+"\" "+(r.trigger==x?"selected":"")+">"+trig[x]+"</option>";
+    html+="</select></label><label>Условие<select name=\"co"+String(i)+"\">";
+    for(int x=0;x<3;x++)html+="<option value=\""+String(x)+"\" "+(r.condition==x?"selected":"")+">"+cond[x]+"</option>";
+    html+="</select></label><label>Количество<input type=\"number\" min=\"1\" max=\"20\" name=\"ct"+String(i)+"\" value=\""+String(r.count?r.count:1)+"\"></label><label>Интервал / удержание, мс<input type=\"number\" min=\"50\" max=\"60000\" name=\"ms"+String(i)+"\" value=\""+String(r.intervalMs?r.intervalMs:700)+"\"></label><label>Приоритет<input type=\"number\" min=\"0\" max=\"255\" name=\"pr"+String(i)+"\" value=\""+String(r.priority)+"\"></label></div><div class=\"acts\"><b>Результаты</b>";
+    for(int k=0;k<EVENT_MAX_ACTIONS;k++){
+      bool show=(k==0)||r.actions[k]!=EV_NO_ACTION;
+      html+="<div class=\"act\" id=\"act"+String(i)+"_"+String(k)+"\" style=\"display:"+(show?"flex":"none")+"\"><label>Результат "+String(k+1)+"<select name=\"ac"+String(i)+"_"+String(k)+"\">";
+      for(int x=0;x<12;x++)html+="<option value=\""+String(x)+"\" "+(r.actions[k]==x?"selected":"")+">"+acts[x]+"</option>";
+      html+="</select></label><label>Значение<input type=\"number\" min=\"0\" max=\"60000\" name=\"va"+String(i)+"_"+String(k)+"\" value=\""+String(r.actionValues[k])+"\"></label>";
+      if(k>0)html+="<button type=\"button\" onclick=\"evHideAct("+String(i)+","+String(k)+")\">×</button>";
+      html+="</div>";
+    }
+    html+="<button type=\"button\" id=\"add"+String(i)+"\" onclick=\"evShowAct("+String(i)+")\""+(r.actions[1]!=EV_NO_ACTION&&r.actions[2]!=EV_NO_ACTION?" style=\"display:none\"":"")+">+ результат</button></div></div>";
+  }
   html+=R"rawliteral(<button type="submit">Проверить и сохранить</button></form><form method="POST" action="/settings/events/reset" onsubmit="return confirm('Вернуть заводские правила?')"><button type="submit">Сбросить к заводским</button></form><h2>Последние события</h2><div class="log">)rawliteral";
   if(!eventLogCount)html+="Событий пока нет";else for(int n=0;n<eventLogCount;n++){int p=(eventLogHead-1-n+10)%10;html+="Правило "+String(eventLog[p].rule+1)+" — "+String(eventLog[p].at)+" мс<br>";}
-  html+="</div>"+getTopBarJs()+"</body></html>";server.send(200,"text/html",html);
+  html+="</div>"+getTopBarJs()+R"rawliteral(<script>function evShowAct(i){for(var k=1;k<3;k++){var d=document.getElementById('act'+i+'_'+k);if(d&&d.style.display=='none'){d.style.display='flex';if(k==2)document.getElementById('add'+i).style.display='none';return;}}}function evHideAct(i,k){var d=document.getElementById('act'+i+'_'+k);if(d){d.style.display='none';var s=d.querySelectorAll('select');for(var j=0;j<s.length;j++)s[j].value=0;}document.getElementById('add'+i).style.display='';}</script></body></html>)rawliteral";server.send(200,"text/html",html);
 }
 
-void handleEventsSave(){EventRule next[EVENT_MAX_RULES];memset(next,0,sizeof(next));String errors="",warnings="";for(int i=0;i<EVENT_MAX_RULES;i++){next[i].enabled=server.hasArg("en"+String(i));next[i].trigger=server.arg("tr"+String(i)).toInt();next[i].condition=server.arg("co"+String(i)).toInt();next[i].count=server.arg("ct"+String(i)).toInt();next[i].intervalMs=server.arg("ms"+String(i)).toInt();next[i].action=server.arg("ac"+String(i)).toInt();next[i].actionValue=server.arg("va"+String(i)).toInt();next[i].priority=server.arg("pr"+String(i)).toInt();if(next[i].enabled&&(next[i].trigger<1||next[i].trigger>3))errors+="Правило "+String(i+1)+": неверный триггер\n";if(next[i].enabled&&(next[i].action<1||next[i].action>EV_PAS_TOGGLE))errors+="Правило "+String(i+1)+": выберите действие\n";if(next[i].condition==EV_PRESS_COUNT&&(next[i].count<1||next[i].count>20))errors+="Правило "+String(i+1)+": количество 1..20\n";if(next[i].enabled&&next[i].intervalMs<50)errors+="Правило "+String(i+1)+": интервал не меньше 50 мс\n";for(int j=0;j<i;j++)if(next[i].enabled&&next[j].enabled&&next[i].trigger==next[j].trigger&&next[i].condition==next[j].condition)warnings+="Дублируются правила "+String(j+1)+" и "+String(i+1)+"\n";}if(errors.length()){server.send(400,"text/plain","Ошибки, правила не сохранены:\n"+errors);return;}memcpy(eventRules,next,sizeof(eventRules));memset(eventRuntime,0,sizeof(eventRuntime));eventSettingsSave();server.send(200,"text/plain","Правила сохранены и применены без перезагрузки."+(warnings.length()?"\nПредупреждения:\n"+warnings:""));}
+void handleEventsSave(){
+  EventRule next[EVENT_MAX_RULES];memset(next,0,sizeof(next));
+  String errors="",warnings="";
+  for(int i=0;i<EVENT_MAX_RULES;i++){
+    EventRule &r=next[i];
+    r.enabled=server.hasArg("en"+String(i));
+    r.trigger=server.arg("tr"+String(i)).toInt();
+    r.condition=server.arg("co"+String(i)).toInt();
+    r.count=server.arg("ct"+String(i)).toInt();
+    r.intervalMs=server.arg("ms"+String(i)).toInt();
+    r.priority=server.arg("pr"+String(i)).toInt();
+    // Сбор непустых результатов и уплотнение в начало списка без дыр.
+    int nActs=0;
+    for(int k=0;k<EVENT_MAX_ACTIONS;k++){
+      uint8_t a=server.arg("ac"+String(i)+"_"+String(k)).toInt();
+      int16_t v=server.arg("va"+String(i)+"_"+String(k)).toInt();
+      if(a!=EV_NO_ACTION){
+        if(nActs<k)warnings+="Правило "+String(i+1)+": результат "+String(k+1)+" перемещён в слот "+String(nActs+1)+"\n";
+        r.actions[nActs]=a;r.actionValues[nActs]=v;nActs++;
+      }
+    }
+    if(r.enabled&&nActs==0)errors+="Правило "+String(i+1)+": добавьте хотя бы один результат\n";
+    for(int k=0;k<nActs;k++){
+      if(r.enabled&&(r.actions[k]<1||r.actions[k]>EV_PAS_TOGGLE))errors+="Правило "+String(i+1)+": неверное действие в результате "+String(k+1)+"\n";
+      if(r.enabled&&r.actions[k]==EV_PAS_SET_LEVEL&&(r.actionValues[k]<0||r.actionValues[k]>pasLevelsCount))errors+="Правило "+String(i+1)+": уровень PAS в результате "+String(k+1)+" 0.."+String(pasLevelsCount)+"\n";
+      for(int j=0;j<k;j++)if(r.actions[j]==r.actions[k])warnings+="Правило "+String(i+1)+": действие повторяется в результатах "+String(j+1)+" и "+String(k+1)+"\n";
+    }
+    if(r.enabled&&(r.trigger<1||r.trigger>EV_TRIGGER_MAX))errors+="Правило "+String(i+1)+": неверный триггер\n";
+    if(r.condition==EV_PRESS_COUNT&&(r.count<1||r.count>20))errors+="Правило "+String(i+1)+": количество 1..20\n";
+    if(r.trigger==EV_PAS_LEVEL&&(r.count<1||r.count>pasLevelsCount))errors+="Правило "+String(i+1)+": уровень PAS 1.."+String(pasLevelsCount)+"\n";
+    if(r.enabled&&(r.trigger==EV_PAS_LEVEL||r.trigger==EV_PAS_ON||r.trigger==EV_PAS_OFF||r.trigger==EV_CRUISE_ON||r.trigger==EV_CRUISE_OFF||r.trigger==EV_BOOT)&&r.condition!=EV_NONE)errors+="Правило "+String(i+1)+": для этого триггера условие не используется\n";
+    if(r.enabled&&r.trigger!=EV_BOOT&&r.intervalMs<50)errors+="Правило "+String(i+1)+": интервал не меньше 50 мс\n";
+    for(int j=0;j<i;j++)if(r.enabled&&next[j].enabled&&r.trigger==next[j].trigger&&r.condition==next[j].condition)warnings+="Дублируются правила "+String(j+1)+" и "+String(i+1)+"\n";
+  }
+  if(errors.length()){server.send(400,"text/plain","Ошибки, правила не сохранены:\n"+errors);return;}
+  memcpy(eventRules,next,sizeof(eventRules));memset(eventRuntime,0,sizeof(eventRuntime));eventSettingsSave();
+  server.send(200,"text/plain","Правила сохранены и применены без перезагрузки."+(warnings.length()?"\nПредупреждения:\n"+warnings:""));
+}
 void handleEventsReset(){eventSettingsReset();memset(eventRuntime,0,sizeof(eventRuntime));server.sendHeader("Location","/settings/events");server.send(303,"text/plain","");}
 
 // ================= Веб: Система (экспорт/импорт настроек, OTA) =================
@@ -3898,7 +4112,14 @@ void handleSettingsExport() {
   json += "\"service\":" + String(serviceModeActive ? 1 : 0) + ",\"rules\":[";
   for (int i = 0; i < EVENT_MAX_RULES; i++) {
     EventRule &r = eventRules[i];
-    json += "{\"en\":" + String(r.enabled ? 1 : 0) + ",\"tr\":" + String(r.trigger) + ",\"co\":" + String(r.condition) + ",\"pr\":" + String(r.priority) + ",\"ct\":" + String(r.count) + ",\"ms\":" + String(r.intervalMs) + ",\"ac\":" + String(r.action) + ",\"va\":" + String(r.actionValue) + "}";
+    json += "{\"en\":" + String(r.enabled ? 1 : 0) + ",\"tr\":" + String(r.trigger) + ",\"co\":" + String(r.condition) + ",\"pr\":" + String(r.priority) + ",\"ct\":" + String(r.count) + ",\"ms\":" + String(r.intervalMs) + ",\"ac\":" + String(r.actions[0]) + ",\"va\":" + String(r.actionValues[0]) + ",\"acts\":[";
+    int nActs = 0;
+    for (int k = 0; k < EVENT_MAX_ACTIONS; k++) {
+      if (r.actions[k] == EV_NO_ACTION) continue;
+      if (nActs++) json += ",";
+      json += "{\"ac\":" + String(r.actions[k]) + ",\"va\":" + String(r.actionValues[k]) + "}";
+    }
+    json += "]}";
     if (i < EVENT_MAX_RULES - 1) json += ",";
   }
   json += "]},";
@@ -4082,6 +4303,8 @@ void handleSettingsImport() {
         if (end == -1) break;
         String item = rulesJson.substring(pos, end + 1);
         EventRule &r = eventRules[i];
+        memset(r.actions, 0, sizeof(r.actions));
+        memset(r.actionValues, 0, sizeof(r.actionValues));
         int p;
         if ((p=item.indexOf("\"en\":"))!=-1) r.enabled=item.substring(p+5).toInt()!=0;
         if ((p=item.indexOf("\"tr\":"))!=-1) r.trigger=item.substring(p+5).toInt();
@@ -4089,8 +4312,28 @@ void handleSettingsImport() {
         if ((p=item.indexOf("\"pr\":"))!=-1) r.priority=item.substring(p+5).toInt();
         if ((p=item.indexOf("\"ct\":"))!=-1) r.count=item.substring(p+5).toInt();
         if ((p=item.indexOf("\"ms\":"))!=-1) r.intervalMs=item.substring(p+5).toInt();
-        if ((p=item.indexOf("\"ac\":"))!=-1) r.action=item.substring(p+5).toInt();
-        if ((p=item.indexOf("\"va\":"))!=-1) r.actionValue=item.substring(p+5).toInt();
+        // Новый формат: список результатов "acts":[{"ac":..,"va":..},...]
+        int actsPos = item.indexOf("\"acts\":[");
+        if (actsPos != -1) {
+          int actsEnd = item.indexOf(']', actsPos);
+          if (actsEnd != -1) {
+            String actsJson = item.substring(actsPos + 8, actsEnd);
+            int ap = 0;
+            for (int k = 0; k < EVENT_MAX_ACTIONS; k++) {
+              int ae = actsJson.indexOf('}', ap);
+              if (ae == -1) break;
+              String act = actsJson.substring(ap, ae + 1);
+              int q;
+              if ((q=act.indexOf("\"ac\":"))!=-1) r.actions[k]=act.substring(q+6).toInt();
+              if ((q=act.indexOf("\"va\":"))!=-1) r.actionValues[k]=act.substring(q+6).toInt();
+              ap = ae + 1;
+            }
+          }
+        } else {
+          // Старый формат: одиночное действие переносится в слот 0.
+          if ((p=item.indexOf("\"ac\":"))!=-1) r.actions[0]=item.substring(p+5).toInt();
+          if ((p=item.indexOf("\"va\":"))!=-1) r.actionValues[0]=item.substring(p+5).toInt();
+        }
         pos=end+2;
       }
       eventSettingsSave();
