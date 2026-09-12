@@ -250,6 +250,9 @@ void handleSettingsImport();
 void handlePinsPage();
 void handlePinsSave();
 void handlePinsReset();
+void handleEventsPage();
+void handleEventsSave();
+void handleEventsReset();
 void handleUpdatePage();
 void handleSystemStatus();
 void criticalControlTask(void *pvParameters);
@@ -263,6 +266,8 @@ extern bool cruiseEnabled;
 extern int cruiseCurrentLevel;
 extern int cruiseLevelsCount;
 extern bool cruiseEngaged;
+extern bool serviceModeActive;
+extern int serviceThrottleLimitPct;
 
 
 // ================= System status tracking ================
@@ -331,6 +336,8 @@ void handleSystemStatus() {
   json += "\"mdns_host\":\"" + String(MDNS_HOST) + ".local\",";
   json += "\"wifi_rssi\":" + String(rssi) + ",";
   json += "\"pas_en\":" + String(pasEnabled ? "true" : "false") + ",";
+  json += "\"service\":" + String(serviceModeActive ? "true" : "false") + ",";
+  json += "\"service_limit_pct\":" + String(serviceThrottleLimitPct) + ",";
   json += "\"gas_pct\":" + String(hwThrottlePct, 2) + ",";
   json += "\"gas_in_v\":" + String(hwThrottleInV, 2) + ",";
   json += "\"gas_out_v\":" + String(hwThrottleOutV, 2) + ",";
@@ -364,6 +371,13 @@ void apSettingsLoad();
 // ================= ТОРМОЗ =================
 bool isBrakePressed() { return digitalRead(BRAKE_PIN) == LOW; }
 bool ownBrakeCutoffEnabled = true; // всегда включено; настройка скрыта из веб-интерфейса
+
+// ================= Сервисный режим (конструктор событий, «проблема 5») =================
+// Включается/выключается событиями (см. updateEventEngine): ограничение газа,
+// PAS не выше 1 уровня, круиз запрещён. Аппаратный тормоз и fail-safe нуля
+// газа на старте не затрагиваются — они приоритетнее любых событий.
+bool serviceModeActive = false;
+int serviceThrottleLimitPct = 30; // % от рабочего диапазона выхода газа
 
 // ================= ГАЗ: аппаратное согласование напряжений =================
 // У ESP32 АЦП/ЦАП работают 0-3.3В, а ручка газа/контроллер — обычно 0-4.2В.
@@ -663,9 +677,12 @@ float applyPasSmoothing(float targetV) {
 
 float getPasTargetV() {
   if (!pasEnabled) return 0; // PAS fully disabled
-  if (pasCurrentLevel <= 0 || pasCurrentLevel > pasLevelsCount) return 0;
+  // Сервисный режим: PAS не выше 1 уровня, каким бы путём его ни raised
+  int effLevel = pasCurrentLevel;
+  if (serviceModeActive && effLevel > 1) effLevel = 1;
+  if (effLevel <= 0 || effLevel > pasLevelsCount) return 0;
   if (!pasConfirmedActive) return 0;
-  float pct = pasLevelPercent[pasCurrentLevel - 1];
+  float pct = pasLevelPercent[effLevel - 1];
   float outMin = throttleOutMinV;
   float outMax = (throttleOutMaxV > outMin + 0.01f) ? throttleOutMaxV : (outMin + 0.01f);
   return outMin + (pct / 100.0f) * (outMax - outMin);
@@ -738,6 +755,7 @@ void updatePasButton() {
 
 // ================= Свет: фара, ДХО =================
 bool headlightOn = false;
+bool drlOn = true; // ДХО горит с включением платы (см. setup)
 
 void toggleHeadlight() {
   headlightOn = !headlightOn;
@@ -745,9 +763,18 @@ void toggleHeadlight() {
   Serial.println(headlightOn ? "Фара: ВКЛ" : "Фара: ВЫКЛ");
 }
 
+void toggleDrl() {
+  drlOn = !drlOn;
+  ledcWrite(1, drlOn ? DRL_DEFAULT_BRIGHTNESS : 0);
+  Serial.println(drlOn ? "ДХО: ВКЛ" : "ДХО: ВЫКЛ");
+}
+
 // ================= Пищалка (тик поворотника) =================
 bool buzzerOn = false;
 unsigned long buzzerOffAtMs = 0;
+// Серия коротких писков (подтверждение входа/выхода сервисного режима)
+uint8_t buzzerPatternRemaining = 0;
+unsigned long buzzerPatternNextMs = 0;
 
 void buzzerClick(unsigned long durationMs) {
   digitalWrite(BUZZER_PIN, HIGH);
@@ -755,10 +782,25 @@ void buzzerClick(unsigned long durationMs) {
   buzzerOffAtMs = millis() + durationMs;
 }
 
+void buzzerPattern(uint8_t beeps) {
+  buzzerPatternRemaining = beeps;
+  buzzerPatternNextMs = 0; // первый писк сразу
+}
+
 void updateBuzzer() {
-  if (buzzerOn && millis() >= buzzerOffAtMs) {
+  unsigned long now = millis();
+  if (buzzerOn && now >= buzzerOffAtMs) {
     digitalWrite(BUZZER_PIN, LOW);
     buzzerOn = false;
+    if (buzzerPatternRemaining > 0) {
+      buzzerPatternRemaining--;
+      if (buzzerPatternRemaining > 0) buzzerPatternNextMs = now + 120;
+    }
+  }
+  if (!buzzerOn && buzzerPatternRemaining > 0 &&
+      (buzzerPatternNextMs == 0 || now >= buzzerPatternNextMs)) {
+    buzzerClick(120);
+    buzzerPatternNextMs = 1; // следующий — только по расписанию
   }
 }
 
@@ -793,7 +835,19 @@ void updateTurnSignals() {
 }
 
 // ================= Гудок =================
+// Гудок обычно отжимной (пока держишь кнопку), но событиям нужен сигнал
+// фиксированной длительности — поверх кнопочного состояния действует override.
+unsigned long hornOverrideUntilMs = 0;
+
+void hornBeep(unsigned long durationMs) {
+  hornOverrideUntilMs = millis() + durationMs;
+}
+
 void updateHorn() {
+  if (millis() < hornOverrideUntilMs) {
+    digitalWrite(HORN_PIN, HIGH);
+    return;
+  }
   bool hornPressed = (digitalRead(BTN_HORN_PIN) == LOW);
   digitalWrite(HORN_PIN, hornPressed ? HIGH : LOW);
 }
@@ -809,6 +863,26 @@ DebouncedButton lightButtons[] = {
   { BTN_TURN_RIGHT_PIN, HIGH, HIGH, 0, toggleTurnRight },
 };
 const int lightButtonsCount = sizeof(lightButtons) / sizeof(lightButtons[0]);
+
+// ================= Конструктор событий =================
+#define EVENT_MAX_RULES 8
+enum EventTrigger { EV_BRAKE_PRESS=1, EV_BRAKE_RELEASE, EV_BRAKE_HOLD };
+enum EventCondition { EV_NONE=0, EV_PRESS_COUNT, EV_HOLD_MS };
+enum EventAction { EV_NO_ACTION=0, EV_SERVICE_TOGGLE, EV_SERVICE_ON, EV_SERVICE_OFF, EV_LIGHT_TOGGLE, EV_DRL_TOGGLE, EV_TURN_L_TOGGLE, EV_TURN_R_TOGGLE, EV_HORN_BEEP, EV_BUZZER_BEEP, EV_PAS_SET_LEVEL, EV_PAS_TOGGLE };
+struct EventRule { uint8_t enabled, trigger, condition, priority; uint16_t count; uint32_t intervalMs; uint8_t action; int16_t actionValue; };
+const EventRule EVENT_DEFAULTS[EVENT_MAX_RULES] = {{1,EV_BRAKE_PRESS,EV_PRESS_COUNT,0,5,700,EV_SERVICE_TOGGLE,30}};
+EventRule eventRules[EVENT_MAX_RULES];
+struct EventRuntime { uint16_t count; unsigned long lastPress, lastFire; bool holdFired; } eventRuntime[EVENT_MAX_RULES];
+struct EventLog { unsigned long at; uint8_t rule; } eventLog[10];
+int eventLogHead=0,eventLogCount=0;
+void eventLogAdd(uint8_t i){eventLog[eventLogHead]={(unsigned long)millis(),i};eventLogHead=(eventLogHead+1)%10;if(eventLogCount<10)eventLogCount++;}
+void eventSettingsSave(){Preferences p;p.begin("events",false);p.putBytes("rules",eventRules,sizeof(eventRules));p.end();}
+void eventSettingsLoad(){Preferences p;p.begin("events",true);size_t n=p.getBytes("rules",eventRules,sizeof(eventRules));p.end();if(n!=sizeof(eventRules))memcpy(eventRules,EVENT_DEFAULTS,sizeof(eventRules));}
+void eventSettingsReset(){memcpy(eventRules,EVENT_DEFAULTS,sizeof(eventRules));eventSettingsSave();}
+void serviceModeApply(bool on){if(serviceModeActive==on)return;serviceModeActive=on;if(on){if(pasCurrentLevel>1)pasCurrentLevel=1;cruiseEnabled=false;cruiseCurrentLevel=0;cruiseEngaged=false;cruisePendingResume=false;buzzerPattern(3);}else buzzerPattern(2);}
+void eventExecute(uint8_t a,int16_t v){switch(a){case EV_SERVICE_TOGGLE:serviceModeApply(!serviceModeActive);break;case EV_SERVICE_ON:serviceModeApply(true);break;case EV_SERVICE_OFF:serviceModeApply(false);break;case EV_LIGHT_TOGGLE:toggleHeadlight();break;case EV_DRL_TOGGLE:toggleDrl();break;case EV_TURN_L_TOGGLE:toggleTurnLeft();break;case EV_TURN_R_TOGGLE:toggleTurnRight();break;case EV_HORN_BEEP:hornBeep(v>0?v:300);break;case EV_BUZZER_BEEP:buzzerClick(v>0?v:150);break;case EV_PAS_SET_LEVEL:pasCurrentLevel=constrain(v,0,pasLevelsCount);pasEnabled=pasCurrentLevel>0;break;case EV_PAS_TOGGLE:pasEnabled=!pasEnabled;if(!pasEnabled)pasCurrentLevel=0;else if(!pasCurrentLevel)pasCurrentLevel=1;break;default:break;}}
+void eventFire(int i){unsigned long n=millis();if(n-eventRuntime[i].lastFire<300)return;eventRuntime[i].lastFire=n;eventExecute(eventRules[i].action,eventRules[i].actionValue);eventLogAdd(i);}
+void updateEventEngine(){static bool lastBrake=false;static unsigned long down=0;bool brake=isBrakePressed();unsigned long n=millis();if(brake&&!lastBrake){down=n;for(int i=0;i<EVENT_MAX_RULES;i++){EventRule&r=eventRules[i];if(!r.enabled)continue;if(r.trigger==EV_BRAKE_PRESS&&r.condition==EV_PRESS_COUNT){if(n-eventRuntime[i].lastPress>r.intervalMs)eventRuntime[i].count=0;eventRuntime[i].count++;eventRuntime[i].lastPress=n;if(eventRuntime[i].count>=r.count){eventFire(i);eventRuntime[i].count=0;}}else if(r.trigger==EV_BRAKE_PRESS&&r.condition==EV_NONE)eventFire(i);}}if(!brake&&lastBrake)for(int i=0;i<EVENT_MAX_RULES;i++)if(eventRules[i].enabled&&eventRules[i].trigger==EV_BRAKE_RELEASE)eventFire(i);for(int i=0;i<EVENT_MAX_RULES;i++){EventRule&r=eventRules[i];if(!r.enabled||r.trigger!=EV_BRAKE_HOLD||r.condition!=EV_HOLD_MS)continue;if(brake&&!eventRuntime[i].holdFired&&n-down>=r.intervalMs){eventRuntime[i].holdFired=true;eventFire(i);}if(!brake)eventRuntime[i].holdFired=false;}lastBrake=brake;}
 
 void updateLightButtons() {
   for (int i = 0; i < lightButtonsCount; i++) {
@@ -826,7 +900,6 @@ void updateLightButtons() {
 }
 
 // ================= Отладочный буфер (для графиков в браузере) =================
-// Копим последние несколько секунд значений — газ вход/выход, тормоз, PAS.
 // Страница /debug рисует это как бегущий график, вроде мини-осциллографа.
 const int DEBUG_BUFFER_SIZE = 200; // уменьшено для стабильности JSON-ответа (около 1-2 сек истории при семпле 20мс)
 
@@ -901,8 +974,9 @@ void updateThrottle() {
   if (throttlePct < 0.0f) throttlePct = 0.0f;
   if (throttlePct > 100.0f) throttlePct = 100.0f;
 
-  // Конечный автомат круиз-контроля (State Machine)
-  if (cruiseEnabled && cruiseCurrentLevel > 0) {
+  // Конечный автомат круиз-контроля (State Machine). В сервисном режиме
+  // круиз запрещён — FSM полностью замирает.
+  if (cruiseEnabled && cruiseCurrentLevel > 0 && !serviceModeActive) {
     if (brakePressed) {
       // Тормоз активен: переход в pending режим или сброс в зависимости от настроек
       if (cruiseEngaged || !cruisePendingResume) {
@@ -965,6 +1039,15 @@ void updateThrottle() {
   // чтобы убрать задержку реакции контроллера на старт.
   if (combinedV < throttleOutMinV) {
     combinedV = throttleOutMinV;
+  }
+
+  // Сервисный режим: жёсткий потолок мощности. Физический тормоз (ниже) и
+  // ограничение ЦАП сильнее этого потолка — его обойти нельзя никак.
+  if (serviceModeActive) {
+    float svcOutMin = throttleOutMinV;
+    float svcOutMax = (throttleOutMaxV > svcOutMin + 0.01f) ? throttleOutMaxV : (svcOutMin + 0.01f);
+    float limitV = svcOutMin + (constrain(serviceThrottleLimitPct, 0, 100) / 100.0f) * (svcOutMax - svcOutMin);
+    if (combinedV > limitV) combinedV = limitV;
   }
 
   // Обновляем глобальные переменные телеметрии
@@ -1583,6 +1666,7 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
 <a class="card" href="/settings/throttle">Газ &rarr;</a>
 <a class="card" href="/settings/pas">Педали (PAS) &rarr;</a>
 <a class="card" href="/settings/cruise">Круиз &rarr;</a>
+<a class="card" href="/settings/events">События / сервисный режим &rarr;</a>
 <a class="card" href="/wifi">Связь &rarr;</a>
 <a class="card" href="/settings/pins">Распиновка (GPIO) &rarr;</a>
 <div style="color:var(--ui-muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:14px 0 6px">Только для веб-интерфейса</div>
@@ -3144,6 +3228,8 @@ void setup() {
   ledcAttachPin(HEADLIGHT_PIN, 0);
   ledcSetup(1, 5000, 8);
   ledcAttachPin(DRL_PIN, 1);
+  eventSettingsLoad();
+
   ledcWrite(1, DRL_DEFAULT_BRIGHTNESS); // ДХО горит всегда, пока плата включена
 
   // Настоящий ЦАП ESP32 — ledcAttach больше не нужен, dacWrite() работает сразу
@@ -3208,7 +3294,9 @@ server.on("/settings/cruise/save", HTTP_POST, handleCruiseSave);
   server.on("/debug/data", handleDebugData);
   server.on("/settings/pins", handlePinsPage);
   server.on("/settings/pins/save", HTTP_POST, handlePinsSave);
-  server.on("/settings/pins/reset", HTTP_POST, handlePinsReset);
+  server.on("/settings/events", handleEventsPage);
+  server.on("/settings/events/save", HTTP_POST, handleEventsSave);
+  server.on("/settings/events/reset", HTTP_POST, handleEventsReset);
   server.on("/system", handleSystemPage);
   server.on("/system/export", handleSettingsExport);
   server.on("/system/import", HTTP_POST, handleSettingsImport);
@@ -3259,6 +3347,7 @@ void criticalControlTask(void *pvParameters) {
     cpuUsPasBtn += micros() - secStart;
 
     secStart = micros();
+    updateEventEngine();
     updateThrottle();
     cpuUsThrottle += micros() - secStart;
 
@@ -3636,6 +3725,21 @@ void handlePinsReset() {
   ESP.restart();
 }
 
+// ================= Веб: конструктор событий =================
+void handleEventsPage() {
+  String html=R"rawliteral(<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>События</title><style>)rawliteral"+getTopBarCss()+getSettingsCss()+R"rawliteral(.rule{background:var(--ui-card);border:1px solid var(--ui-border);padding:12px;border-radius:8px;margin:12px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log{font-size:13px;color:var(--ui-muted)}@media(max-width:420px){.grid{grid-template-columns:1fr}}</style></head><body>)rawliteral"+getTopBarHtml()+R"rawliteral(<p><a class="back" href="/">&larr; Меню</a></p><h1>Конструктор событий</h1><p class="hint">Правила применяются сразу, без перезагрузки. Аппаратный тормоз, нулевой fail-safe, watchdog и максимальный предел газа правилами не изменяются.</p><form method="POST" action="/settings/events/save">)rawliteral";
+  const char* trig[] = {"-","Тормоз: нажатие","Тормоз: отпускание","Тормоз: удержание"};
+  const char* cond[] = {"Без условия","Серия нажатий","Удержание, мс"};
+  const char* acts[] = {"Нет","Сервис: переключить","Сервис: включить","Сервис: выключить","Фара: переключить","ДХО: переключить","Левый поворотник","Правый поворотник","Гудок","Пищалка","PAS: установить уровень","PAS: переключить"};
+  for(int i=0;i<EVENT_MAX_RULES;i++){EventRule&r=eventRules[i];html+="<div class=\"rule\"><b>Правило "+String(i+1)+"</b><label class=\"chk\"><input type=\"checkbox\" name=\"en"+String(i)+"\" "+(r.enabled?"checked":"")+"><span>Включено</span></label><div class=\"grid\"><label>Триггер<select name=\"tr"+String(i)+"\">";for(int x=0;x<4;x++)html+="<option value=\""+String(x)+"\" "+(r.trigger==x?"selected":"")+">"+trig[x]+"</option>";html+="</select></label><label>Условие<select name=\"co"+String(i)+"\">";for(int x=0;x<3;x++)html+="<option value=\""+String(x)+"\" "+(r.condition==x?"selected":"")+">"+cond[x]+"</option>";html+="</select></label><label>Количество<input type=\"number\" min=\"1\" max=\"20\" name=\"ct"+String(i)+"\" value=\""+String(r.count?r.count:1)+"\"></label><label>Интервал / удержание, мс<input type=\"number\" min=\"50\" max=\"60000\" name=\"ms"+String(i)+"\" value=\""+String(r.intervalMs?r.intervalMs:700)+"\"></label><label>Действие<select name=\"ac"+String(i)+"\">";for(int x=0;x<12;x++)html+="<option value=\""+String(x)+"\" "+(r.action==x?"selected":"")+">"+acts[x]+"</option>";html+="</select></label><label>Значение<input type=\"number\" min=\"0\" max=\"60000\" name=\"va"+String(i)+"\" value=\""+String(r.actionValue)+"\"></label><label>Приоритет<input type=\"number\" min=\"0\" max=\"255\" name=\"pr"+String(i)+"\" value=\""+String(r.priority)+"\"></label></div></div>";}
+  html+=R"rawliteral(<button type="submit">Проверить и сохранить</button></form><form method="POST" action="/settings/events/reset" onsubmit="return confirm('Вернуть заводские правила?')"><button type="submit">Сбросить к заводским</button></form><h2>Последние события</h2><div class="log">)rawliteral";
+  if(!eventLogCount)html+="Событий пока нет";else for(int n=0;n<eventLogCount;n++){int p=(eventLogHead-1-n+10)%10;html+="Правило "+String(eventLog[p].rule+1)+" — "+String(eventLog[p].at)+" мс<br>";}
+  html+="</div>"+getTopBarJs()+"</body></html>";server.send(200,"text/html",html);
+}
+
+void handleEventsSave(){EventRule next[EVENT_MAX_RULES];memset(next,0,sizeof(next));String errors="",warnings="";for(int i=0;i<EVENT_MAX_RULES;i++){next[i].enabled=server.hasArg("en"+String(i));next[i].trigger=server.arg("tr"+String(i)).toInt();next[i].condition=server.arg("co"+String(i)).toInt();next[i].count=server.arg("ct"+String(i)).toInt();next[i].intervalMs=server.arg("ms"+String(i)).toInt();next[i].action=server.arg("ac"+String(i)).toInt();next[i].actionValue=server.arg("va"+String(i)).toInt();next[i].priority=server.arg("pr"+String(i)).toInt();if(next[i].enabled&&(next[i].trigger<1||next[i].trigger>3))errors+="Правило "+String(i+1)+": неверный триггер\n";if(next[i].enabled&&(next[i].action<1||next[i].action>EV_PAS_TOGGLE))errors+="Правило "+String(i+1)+": выберите действие\n";if(next[i].condition==EV_PRESS_COUNT&&(next[i].count<1||next[i].count>20))errors+="Правило "+String(i+1)+": количество 1..20\n";if(next[i].enabled&&next[i].intervalMs<50)errors+="Правило "+String(i+1)+": интервал не меньше 50 мс\n";for(int j=0;j<i;j++)if(next[i].enabled&&next[j].enabled&&next[i].trigger==next[j].trigger&&next[i].condition==next[j].condition)warnings+="Дублируются правила "+String(j+1)+" и "+String(i+1)+"\n";}if(errors.length()){server.send(400,"text/plain","Ошибки, правила не сохранены:\n"+errors);return;}memcpy(eventRules,next,sizeof(eventRules));memset(eventRuntime,0,sizeof(eventRuntime));eventSettingsSave();server.send(200,"text/plain","Правила сохранены и применены без перезагрузки."+(warnings.length()?"\nПредупреждения:\n"+warnings:""));}
+void handleEventsReset(){eventSettingsReset();memset(eventRuntime,0,sizeof(eventRuntime));server.sendHeader("Location","/settings/events");server.send(303,"text/plain","");}
+
 // ================= Веб: Система (экспорт/импорт настроек, OTA) =================
 void handleSystemPage() {
   String html = R"rawliteral(
@@ -3790,6 +3894,14 @@ void handleSettingsExport() {
   json += "\"ssid\":\"" + storedSsid + "\",";
   json += "\"pass\":\"" + storedPass + "\""; // Add storedPass
   json += "},";
+  json += "\"events\":{";
+  json += "\"service\":" + String(serviceModeActive ? 1 : 0) + ",\"rules\":[";
+  for (int i = 0; i < EVENT_MAX_RULES; i++) {
+    EventRule &r = eventRules[i];
+    json += "{\"en\":" + String(r.enabled ? 1 : 0) + ",\"tr\":" + String(r.trigger) + ",\"co\":" + String(r.condition) + ",\"pr\":" + String(r.priority) + ",\"ct\":" + String(r.count) + ",\"ms\":" + String(r.intervalMs) + ",\"ac\":" + String(r.action) + ",\"va\":" + String(r.actionValue) + "}";
+    if (i < EVENT_MAX_RULES - 1) json += ",";
+  }
+  json += "]},";
   json += "\"ap\":{"; // New AP settings section
   json += "\"ssid\":\"" + storedApSsid + "\",";
   json += "\"pass\":\"" + storedApPass + "\"";
@@ -3954,6 +4066,34 @@ void handleSettingsImport() {
           apSettingsSave(); // Save AP settings
         }
       }
+    }
+  }
+
+  // --- Event Constructor Settings ---
+  idx = fileContent.indexOf("\"events\":{");
+  if (idx != -1) {
+    int rulesStart = fileContent.indexOf("\"rules\":[", idx);
+    int rulesEnd = fileContent.indexOf("]", rulesStart);
+    if (rulesStart != -1 && rulesEnd != -1) {
+      String rulesJson = fileContent.substring(rulesStart + 9, rulesEnd);
+      int pos = 0;
+      for (int i = 0; i < EVENT_MAX_RULES; i++) {
+        int end = rulesJson.indexOf('}', pos);
+        if (end == -1) break;
+        String item = rulesJson.substring(pos, end + 1);
+        EventRule &r = eventRules[i];
+        int p;
+        if ((p=item.indexOf("\"en\":"))!=-1) r.enabled=item.substring(p+5).toInt()!=0;
+        if ((p=item.indexOf("\"tr\":"))!=-1) r.trigger=item.substring(p+5).toInt();
+        if ((p=item.indexOf("\"co\":"))!=-1) r.condition=item.substring(p+5).toInt();
+        if ((p=item.indexOf("\"pr\":"))!=-1) r.priority=item.substring(p+5).toInt();
+        if ((p=item.indexOf("\"ct\":"))!=-1) r.count=item.substring(p+5).toInt();
+        if ((p=item.indexOf("\"ms\":"))!=-1) r.intervalMs=item.substring(p+5).toInt();
+        if ((p=item.indexOf("\"ac\":"))!=-1) r.action=item.substring(p+5).toInt();
+        if ((p=item.indexOf("\"va\":"))!=-1) r.actionValue=item.substring(p+5).toInt();
+        pos=end+2;
+      }
+      eventSettingsSave();
     }
   }
 
