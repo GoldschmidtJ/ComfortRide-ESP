@@ -25,35 +25,182 @@ const IPAddress staticSTADNS(192, 168, 43, 1);
 DNSServer dnsServer;
 const byte DNS_PORT = 53;
 
-// ================= ПИНЫ (распаять сюда) =================
-// Газ: GND -> GND, +5В -> 5В, Сигнал -> GPIO34 (ВНИМАНИЕ: см. предупреждение по напряжению ниже)
-const int THROTTLE_ADC_PIN = 34;
-// Выход газа на моторконтроллер — настоящий ЦАП ESP32 + усилитель на ОУ
-// (MCP6002, канал Б). ЦАП сам по себе уже даёт чистое напряжение 0-3.3В,
-// ОУ просто поднимает его до нужных 0-4.2В.
-const int THROTTLE_DAC_PIN = 25;
-// Тормоз: один провод -> GND, второй -> GPIO27
-const int BRAKE_PIN = 27;
-// PAS-датчик: GND -> GND, +5В -> 5В, Сигнал -> GPIO14
-const int PAS_SENSOR_PIN = 14;
-// Кнопка переключения уровня PAS: один контакт -> GND, второй -> GPIO13
-const int PAS_BUTTON_PIN = 13;
+// ================= ПИНЫ (конструктор распиновки в веб-интерфейсе) =================
+// Заводская распиновка проекта. Её можно переназначить через веб-интерфейс
+// (/settings/pins): конфиг хранится в NVS и применяется при старте в setup().
+// Газ: GND -> GND, +5В -> 5В, Сигнал -> GPIO34 (см. предупреждение по напряжению ниже).
+// Выход газа — настоящий ЦАП ESP32 + усилитель на ОУ (MCP6002, канал Б):
+// ЦАП даёт чистые 0-3.3В, ОУ поднимает их до нужных 0-4.2В.
+// Свет/звук: MOSFET AOD418 (низкая сторона — минус нагрузки на пин, плюс — на 12В-шину).
 
-// ================= СВЕТ / ЗВУК (передняя группа, 12В) =================
-// Все переключаются MOSFET AOD418 (низкая сторона — минус нагрузки на этот
-// пин, плюс нагрузки — на общую 12В-шину напрямую). Задний блок (48В,
-// неизвестной конструкции) пока НЕ трогаем — см. обсуждение в чате.
-const int HEADLIGHT_PIN   = 18; // фара, ШИМ
-const int DRL_PIN         = 19; // ДХО, ШИМ
-const int TURN_LEFT_PIN   = 21; // поворотник левый
-const int TURN_RIGHT_PIN  = 22; // поворотник правый
-const int HORN_PIN        = 23; // гудок
-const int BUZZER_PIN      = 4;  // пищалка (тик поворотника)
+struct PinConfig {
+  int16_t throttleAdc;   // вход ручки газа (АЦП)
+  int16_t throttleDac;   // выход газа на мотор-контроллер (ЦАП, только GPIO25/26)
+  int16_t brake;         // тормоз (вход с подтяжкой)
+  int16_t pasSensor;     // PAS-датчик (прерывание, подтяжка)
+  int16_t pasButton;     // кнопка уровня PAS
+  int16_t headlight;     // фара (ШИМ)
+  int16_t drl;           // ДХО (ШИМ)
+  int16_t turnLeft;      // поворотник левый
+  int16_t turnRight;     // поворотник правый
+  int16_t horn;          // гудок
+  int16_t buzzer;        // пищалка (тик поворотника)
+  int16_t btnHeadlight;  // кнопка фары
+  int16_t btnTurnLeft;   // кнопка поворотника влево
+  int16_t btnTurnRight;  // кнопка поворотника вправо
+  int16_t btnHorn;       // кнопка гудка (отжимная)
+};
 
-const int BTN_HEADLIGHT_PIN  = 16; // кнопка фары
-const int BTN_TURN_LEFT_PIN  = 17; // кнопка поворотник влево
-const int BTN_TURN_RIGHT_PIN = 32; // кнопка поворотник вправо
-const int BTN_HORN_PIN       = 33; // кнопка гудка (отжимная)
+static const PinConfig PIN_CONFIG_DEFAULTS = {34, 25, 27, 14, 13, 18, 19, 21, 22, 23, 4, 16, 17, 32, 33};
+PinConfig pinConfig = PIN_CONFIG_DEFAULTS;
+bool pinConfigCustom = false; // true — пользователь менял распиновку через веб
+
+// Рабочие переменные пинов — их использует вся остальная прошивка.
+// Заполняются из pinConfig при старте (applyPinConfig()).
+int THROTTLE_ADC_PIN   = 34;
+int THROTTLE_DAC_PIN   = 25;
+int BRAKE_PIN          = 27;
+int PAS_SENSOR_PIN     = 14;
+int PAS_BUTTON_PIN     = 13;
+int HEADLIGHT_PIN      = 18;
+int DRL_PIN            = 19;
+int TURN_LEFT_PIN      = 21;
+int TURN_RIGHT_PIN     = 22;
+int HORN_PIN           = 23;
+int BUZZER_PIN         = 4;
+int BTN_HEADLIGHT_PIN  = 16;
+int BTN_TURN_LEFT_PIN  = 17;
+int BTN_TURN_RIGHT_PIN = 32;
+int BTN_HORN_PIN       = 33;
+
+// --- Возможности GPIO (ESP32-WROOM) ---
+bool gpioExists(int g)    { return (g >= 0 && g <= 19) || (g >= 21 && g <= 23) || (g >= 25 && g <= 27) || (g >= 32 && g <= 39); }
+bool gpioInputOnly(int g) { return g >= 34 && g <= 39; }  // 34-39: только вход, внутренней подтяжки нет
+bool gpioHasAdc(int g)    { return g == 0 || g == 2 || g == 4 || (g >= 12 && g <= 15) || (g >= 25 && g <= 27) || (g >= 32 && g <= 39); }
+bool gpioIsAdc2(int g)    { return g == 0 || g == 2 || g == 4 || (g >= 12 && g <= 15) || (g >= 25 && g <= 27); } // ADC2 конфликтует с Wi-Fi
+bool gpioHasDac(int g)    { return g == 25 || g == 26; }
+bool gpioIsFlash(int g)   { return g >= 6 && g <= 11; }   // подключены к SPI Flash
+bool gpioIsStrap(int g)   { return g == 0 || g == 2 || g == 5 || g == 12 || g == 15; } // страппинг-пины
+bool gpioIsUart(int g)    { return g == 1 || g == 3; }    // UART0 (USB/отладка)
+
+// --- Роли пинов ---
+const int PIN_ROLE_COUNT = 15;
+struct PinRole {
+  const char *key;    // имя в HTTP/NVS
+  const char *title;  // название в интерфейсе
+  bool output;        // выход (иначе вход)
+  bool adc;           // требуется АЦП
+  bool dac;           // требуется ЦАП
+  bool pullup;        // нужна внутренняя подтяжка
+  bool pwm;           // ШИМ (LEDC)
+};
+
+const PinRole pinRoles[PIN_ROLE_COUNT] = {
+  {"tAdc",  "Вход газа",           false, true,  false, false, false},
+  {"tDac",  "Выход газа (ЦАП)",    true,  false, true,  false, false},
+  {"brake", "Тормоз",              false, false, false, true,  false},
+  {"pas",   "PAS-датчик",          false, false, false, true,  false},
+  {"pasB",  "Кнопка PAS",          false, false, false, true,  false},
+  {"light", "Фара",                true,  false, false, false, true},
+  {"drl",   "ДХО",                 true,  false, false, false, true},
+  {"turnL", "Поворотник левый",    true,  false, false, false, false},
+  {"turnR", "Поворотник правый",   true,  false, false, false, false},
+  {"horn",  "Гудок",               true,  false, false, false, false},
+  {"buzz",  "Пищалка",             true,  false, false, false, false},
+  {"bLgt",  "Кнопка фары",         false, false, false, true,  false},
+  {"bTL",   "Кнопка пов. влево",   false, false, false, true,  false},
+  {"bTR",   "Кнопка пов. вправо",  false, false, false, true,  false},
+  {"bHrn",  "Кнопка гудка",        false, false, false, true,  false},
+};
+
+int16_t& pinField(PinConfig &c, int i) {
+  switch (i) {
+    case 0:  return c.throttleAdc;
+    case 1:  return c.throttleDac;
+    case 2:  return c.brake;
+    case 3:  return c.pasSensor;
+    case 4:  return c.pasButton;
+    case 5:  return c.headlight;
+    case 6:  return c.drl;
+    case 7:  return c.turnLeft;
+    case 8:  return c.turnRight;
+    case 9:  return c.horn;
+    case 10: return c.buzzer;
+    case 11: return c.btnHeadlight;
+    case 12: return c.btnTurnLeft;
+    case 13: return c.btnTurnRight;
+    default: return c.btnHorn;
+  }
+}
+
+// Валидация конфигурации: ошибки (запрет сохранения) и предупреждения.
+String validatePinConfig(PinConfig &c, String *warnings) {
+  String errors = "";
+  if (warnings) *warnings = "";
+  for (int i = 0; i < PIN_ROLE_COUNT; i++) {
+    int g = pinField(c, i);
+    const PinRole &r = pinRoles[i];
+    String where = String(r.title) + " (GPIO" + String(g) + "): ";
+    if (!gpioExists(g)) { errors += where + "пин не существует\n"; continue; }
+    if (gpioIsFlash(g)) { errors += where + "занят SPI Flash\n"; continue; }
+    if (gpioIsUart(g))  { errors += where + "занят UART0 (USB/отладка)\n"; continue; }
+    if (r.output && gpioInputOnly(g)) { errors += where + "пин работает только на вход\n"; continue; }
+    if (r.pullup && gpioInputOnly(g)) { errors += where + "нет внутренней подтяжки (нужен внешний резистор)\n"; continue; }
+    if (r.adc && !gpioHasAdc(g)) { errors += where + "на пине нет АЦП\n"; continue; }
+    if (r.dac && !gpioHasDac(g)) { errors += where + "ЦАП есть только на GPIO25/GPIO26\n"; continue; }
+    if (warnings) {
+      if (gpioIsStrap(g)) *warnings += where + "страппинг-пин — влияет на режим загрузки платы\n";
+      if (r.adc && gpioIsAdc2(g)) *warnings += where + "ADC2 — нестабилен при активном Wi-Fi\n";
+    }
+  }
+  for (int i = 0; i < PIN_ROLE_COUNT; i++)
+    for (int j = i + 1; j < PIN_ROLE_COUNT; j++)
+      if (pinField(c, i) == pinField(c, j))
+        errors += String(pinRoles[j].title) + " и " + String(pinRoles[i].title) + " на одном пине (GPIO" + String(pinField(c, i)) + ")\n";
+  return errors;
+}
+
+void applyPinConfig() {
+  THROTTLE_ADC_PIN   = pinConfig.throttleAdc;
+  THROTTLE_DAC_PIN   = pinConfig.throttleDac;
+  BRAKE_PIN          = pinConfig.brake;
+  PAS_SENSOR_PIN     = pinConfig.pasSensor;
+  PAS_BUTTON_PIN     = pinConfig.pasButton;
+  HEADLIGHT_PIN      = pinConfig.headlight;
+  DRL_PIN            = pinConfig.drl;
+  TURN_LEFT_PIN      = pinConfig.turnLeft;
+  TURN_RIGHT_PIN     = pinConfig.turnRight;
+  HORN_PIN           = pinConfig.horn;
+  BUZZER_PIN         = pinConfig.buzzer;
+  BTN_HEADLIGHT_PIN  = pinConfig.btnHeadlight;
+  BTN_TURN_LEFT_PIN  = pinConfig.btnTurnLeft;
+  BTN_TURN_RIGHT_PIN = pinConfig.btnTurnRight;
+  BTN_HORN_PIN       = pinConfig.btnHorn;
+}
+
+void pinSettingsSave() {
+  Preferences p;
+  p.begin("pins", false);
+  p.putBytes("cfg", &pinConfig, sizeof(pinConfig));
+  p.putBool("custom", pinConfigCustom);
+  p.end();
+}
+
+void pinSettingsLoad() {
+  Preferences p;
+  p.begin("pins", true);
+  PinConfig c = PIN_CONFIG_DEFAULTS;
+  size_t got = p.getBytes("cfg", &c, sizeof(c));
+  bool custom = p.getBool("custom", false);
+  p.end();
+  if (got == sizeof(c)) {
+    pinConfig = c;
+    pinConfigCustom = custom;
+  } else {
+    pinConfig = PIN_CONFIG_DEFAULTS;
+    pinConfigCustom = false;
+  }
+}
 
 const int HEADLIGHT_DEFAULT_BRIGHTNESS = 220; // 0-255
 const int DRL_DEFAULT_BRIGHTNESS       = 60;  // 0-255, горит всегда
@@ -100,6 +247,9 @@ void handleDebugData();
 void handleSystemPage();
 void handleSettingsExport();
 void handleSettingsImport();
+void handlePinsPage();
+void handlePinsSave();
+void handlePinsReset();
 void handleUpdatePage();
 void handleSystemStatus();
 void criticalControlTask(void *pvParameters);
@@ -1434,6 +1584,7 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
 <a class="card" href="/settings/pas">Педали (PAS) &rarr;</a>
 <a class="card" href="/settings/cruise">Круиз &rarr;</a>
 <a class="card" href="/wifi">Связь &rarr;</a>
+<a class="card" href="/settings/pins">Распиновка (GPIO) &rarr;</a>
 <div style="color:var(--ui-muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:14px 0 6px">Только для веб-интерфейса</div>
 <a class="card" href="/debug">Отладка &rarr;</a>
 <a class="card" href="/system">Система &rarr;</a>
@@ -2971,6 +3122,11 @@ void setup() {
   Serial.begin(115200);
   Serial.println(F("--- OpenBike Controller v0.2.0-alpha ---"));
 
+  // Распиновка: загрузка из NVS и применение до настройки всех пинов
+  pinSettingsLoad();
+  applyPinConfig();
+  if (pinConfigCustom) Serial.println(F("Распиновка: применяется пользовательская конфигурация из NVS"));
+
   pinMode(BRAKE_PIN, INPUT_PULLUP);
   pinMode(PAS_SENSOR_PIN, INPUT_PULLUP);
   pinMode(PAS_BUTTON_PIN, INPUT_PULLUP);
@@ -3050,6 +3206,9 @@ server.on("/settings/cruise", handleCruisePage);
 server.on("/settings/cruise/save", HTTP_POST, handleCruiseSave);
   server.on("/debug", handleDebugPage);
   server.on("/debug/data", handleDebugData);
+  server.on("/settings/pins", handlePinsPage);
+  server.on("/settings/pins/save", HTTP_POST, handlePinsSave);
+  server.on("/settings/pins/reset", HTTP_POST, handlePinsReset);
   server.on("/system", handleSystemPage);
   server.on("/system/export", handleSettingsExport);
   server.on("/system/import", HTTP_POST, handleSettingsImport);
@@ -3353,6 +3512,128 @@ void handleCruiseSave() {
   if (server.hasArg("thrMode")) cruiseAfterThrottleMode = server.arg("thrMode").toInt();
   cruiseSettingsSave();
   server.send(200, "text/plain", "OK");
+}
+
+// ================= Веб: конструктор распиновки =================
+String pinOptionsHtml(int selected, bool output, bool needAdc, bool needDac, bool needPullup) {
+  String html = "";
+  for (int g = 0; g <= 39; g++) {
+    if (!gpioExists(g)) continue;
+    bool ok = true;
+    String note = "";
+    if (gpioIsFlash(g)) { ok = false; note = " (Flash)"; }
+    else if (gpioIsUart(g)) { ok = false; note = " (UART0)"; }
+    else if (output && gpioInputOnly(g)) { ok = false; note = " (только вход)"; }
+    else if (needPullup && gpioInputOnly(g)) { ok = false; note = " (нет подтяжки)"; }
+    else if (needAdc && !gpioHasAdc(g)) { ok = false; note = " (нет АЦП)"; }
+    else if (needDac && !gpioHasDac(g)) { ok = false; note = " (нет ЦАП)"; }
+    if (gpioIsStrap(g)) note += " (страп)";
+    if (needAdc && gpioIsAdc2(g)) note += " (ADC2/Wi-Fi)";
+    String opt = "<option value=\"" + String(g) + "\"";
+    if (g == selected) opt += " selected";
+    if (!ok) opt += " disabled";
+    opt += ">GPIO" + String(g) + note + "</option>";
+    html += opt;
+  }
+  return html;
+}
+
+void handlePinsPage() {
+  String errors, warnings;
+  PinConfig tmp = pinConfig;
+  errors = validatePinConfig(tmp, &warnings);
+
+  // Карта занятости пинов
+  bool used[40] = {false};
+  for (int i = 0; i < PIN_ROLE_COUNT; i++) {
+    int g = pinField(pinConfig, i);
+    if (g >= 0 && g <= 39) used[g] = true;
+  }
+  String freeList = "";
+  int freeCount = 0;
+  for (int g = 0; g <= 39; g++) {
+    if (!gpioExists(g) || gpioIsFlash(g) || gpioIsUart(g) || used[g]) continue;
+    freeList += String(freeCount ? ", " : "") + "GPIO" + String(g);
+    freeCount++;
+  }
+
+  String html = R"rawliteral(
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Распиновка GPIO</title>
+<style>
+)rawliteral" + getTopBarCss() + R"rawliteral(
+body{font-family:sans-serif;padding:20px;max-width:480px;margin:auto;background:var(--ui-bg);color:var(--ui-text)}
+.pin-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--ui-card);border:1px solid var(--ui-border);border-radius:8px;padding:8px 10px;margin-bottom:6px}
+.pin-row label{flex:1;font-size:14px}
+.pin-row select{background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;padding:6px;max-width:190px;font-size:13px}
+button{margin-top:10px;padding:10px;width:100%;font-size:15px;border-radius:8px;border:1px solid var(--ui-border);background:var(--ui-button);color:var(--ui-text);cursor:pointer}
+button:hover{background:var(--ui-hover)}
+.msg{padding:10px;border-radius:8px;margin:10px 0;font-size:13px;white-space:pre-line}
+.msg-err{border:1px solid var(--ui-danger);color:var(--ui-danger)}
+.msg-warn{border:1px solid var(--ui-warning);color:var(--ui-warning)}
+.msg-ok{border:1px solid var(--ui-success);color:var(--ui-success)}
+.free{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:8px;padding:10px;margin:10px 0;font-size:13px;color:var(--ui-muted)}
+h2{font-size:15px;margin:16px 0 8px}
+</style></head><body>
+)rawliteral" + getTopBarHtml() + R"rawliteral(
+
+<p><a href="/" style="color:var(--ui-accent)">&larr; Настройки</a></p>
+<h1 style="font-size:20px">Распиновка GPIO</h1>
+<p style="color:var(--ui-muted);font-size:13px">Переназначь пины под свою разводку. Конфиг сохраняется в NVS и применяется после перезагрузки платы.
+)rawliteral" + String(pinConfigCustom ? "Сейчас действует <b>пользовательская</b> конфигурация." : "Сейчас действует <b>заводская</b> конфигурация.") + R"rawliteral(</p>
+<div class="free"><b>Свободные пины:</b> )rawliteral" + (freeCount ? freeList : "нет") + R"rawliteral(</div>
+)rawliteral" + (errors.length() ? "<div class=\"msg msg-err\">" + errors + "</div>" : "") + R"rawliteral(
+)rawliteral" + (warnings.length() ? "<div class=\"msg msg-warn\">" + warnings + "</div>" : "") + R"rawliteral(
+<form method="POST" action="/settings/pins/save">
+)rawliteral";
+
+  for (int i = 0; i < PIN_ROLE_COUNT; i++) {
+    const PinRole &r = pinRoles[i];
+    int g = pinField(pinConfig, i);
+    String badges = String(r.output ? "[выход] " : "") + (r.adc ? "[АЦП] " : "") + (r.dac ? "[ЦАП] " : "") + (r.pullup ? "[подтяжка] " : "") + (r.pwm ? "[ШИМ]" : "");
+    html += "<div class=\"pin-row\"><label>" + String(r.title) + "<br><span style=\"color:var(--ui-muted);font-size:11px\">" + badges + "</span></label>";
+    html += "<select name=\"" + String(r.key) + "\">" + pinOptionsHtml(g, r.output, r.adc, r.dac, r.pullup) + "</select></div>";
+  }
+
+  html += R"rawliteral(
+<button type="submit">Проверить и сохранить</button>
+</form>
+<form method="POST" action="/settings/pins/reset" onsubmit="return confirm('Вернуть заводскую распиновку?')">
+<button type="submit">Сбросить к заводской</button>
+</form>
+)rawliteral" + getTopBarJs() + R"rawliteral(
+</body></html>
+)rawliteral";
+  server.send(200, "text/html", html);
+}
+
+void handlePinsSave() {
+  PinConfig next = pinConfig;
+  for (int i = 0; i < PIN_ROLE_COUNT; i++) {
+    if (server.hasArg(pinRoles[i].key)) pinField(next, i) = (int16_t)server.arg(pinRoles[i].key).toInt();
+  }
+  String warnings;
+  String errors = validatePinConfig(next, &warnings);
+  if (errors.length()) {
+    server.send(400, "text/plain", "Ошибки в распиновке, конфиг не сохранён:\n" + errors);
+    return;
+  }
+  pinConfig = next;
+  pinConfigCustom = true;
+  pinSettingsSave();
+  server.send(200, "text/plain", "Распиновка сохранена. Перезагрузка для применения...");
+  delay(1500);
+  ESP.restart();
+}
+
+void handlePinsReset() {
+  pinConfig = PIN_CONFIG_DEFAULTS;
+  pinConfigCustom = false;
+  pinSettingsSave();
+  server.send(200, "text/plain", "Возвращена заводская распиновка. Перезагрузка...");
+  delay(1500);
+  ESP.restart();
 }
 
 // ================= Веб: Система (экспорт/импорт настроек, OTA) =================
