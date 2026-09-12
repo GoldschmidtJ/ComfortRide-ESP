@@ -21,10 +21,10 @@
 
 ---
 
-## 📂 Два трека прошивки
+## 📦 Актуальная прошивка
 
-- **`bike_comfort_firmware.ino`** — Полная версия: круиз-контроль, меню на джойстике, LED-матрица 8x32, расширенная индикация и веб-эмуляция.
-- **`bike_prototype_simple.ino`** — Оптимизированная стабильная версия: throttle-by-wire с PAS, приоритет тормоза, свет/звук передней группы, WiFi-настройки, телеметрия. **Текущая версия: v0.2.0-alpha**
+- **`src/main.cpp`** — единственная актуальная прошивка PlatformIO, версия **v0.2.0-alpha**: throttle-by-wire, PAS, приоритет тормоза, свет/звук, WiFi-настройки, телеметрия и OTA.
+- **`bike_web_preview.html`** — автономный предпросмотр веб-интерфейса без подключения к ESP32.
 
 ---
 
@@ -53,7 +53,6 @@
 - **[simple_wire_routing.svg](./simple_wire_routing.svg)** — Быстрая схема для монтажа "куда какой провод".
 - **[hall_speed_sensor.svg](./hall_speed_sensor.svg)** — План подключения одного Холла мотора для скорости и пробега (через делитель).
 - **[display_bus_sniffer.svg](./display_bus_sniffer.svg)** — План пассивного сниффера шины дисплея контроллера (RX-only).
-- **[high_side_switch.svg](./high_side_switch.svg)**, **[output_stage_schematic.svg](./output_stage_schematic.svg)**, **[throttle_voltage_matching.svg](./throttle_voltage_matching.svg)**, **[wiring_v2_no_purchase.svg](./wiring_v2_no_purchase.svg)** — архивные варианты, не использовать для текущего монтажа.
 
 ---
 
@@ -112,11 +111,9 @@
 .
 ├── README.md                     # Документация проекта
 ├── LICENSE                       # Лицензия MIT
-├── tz_comfort_block_v0.1.md      # Исходное ТЗ
-├── .gitignore                    # Исключения для Git
-├── bike_prototype_simple.ino     # Актуальная активная прошивка
-├── bike_comfort_firmware.ino     # Полная версия (круиз, дисплей, джойстик)
-├── light_web_control.ino         # Архивный тестовый скетч
+├── tz_comfort_block_v0.1.md      # Исходное ТЗ и планы
+├── platformio.ini                # Конфиг PlatformIO
+├── src/main.cpp                  # Актуальная прошивка (ESP32)
 ├── bike_web_preview.html         # Симулятор веб-интерфейса в браузере
 └── *.svg                         # Принципиальные схемы и распиновка
 ```
