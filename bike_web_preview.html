@@ -6,115 +6,78 @@
 <title>Превью веб-морды (симулятор, без платы)</title>
 <style>
   * { box-sizing: border-box; }
-  body { background:#0b0b0b; color:#eee; font-family:sans-serif; margin:0; padding:0; }
-  .banner { background:#3a2a00; color:#ffcc66; padding:10px 15px; font-size:13px; text-align:center; }
-  nav { display:flex; gap:6px; padding:10px; background:#1a1a1a; flex-wrap:wrap; position:sticky; top:0; z-index:10; }
-  nav button { padding:8px 12px; border:none; border-radius:6px; background:#333; color:#eee; cursor:pointer; font-size:14px; }
-  nav button.active { background:#4a90d9; }
+  :root { --ui-bg:#101214; --ui-card:#191c20; --ui-button:#252a30; --ui-border:#3b424a; --ui-hover:#30363d; --ui-active:#383f47; --ui-text:#eee; --ui-muted:#8b949e; --ui-focus:#8b949e; --ui-accent:#4a90d9; --ui-success:#2ecc71; --ui-warning:#f39c12; --ui-danger:#e74c3c; }
+  body { background:var(--ui-bg); color:var(--ui-text); font-family:sans-serif; margin:0; padding:0; }
+  .banner { background:var(--ui-card); color:var(--ui-warning); border-bottom:1px solid var(--ui-border); padding:10px 15px; font-size:13px; text-align:center; }
+  nav { display:flex; gap:6px; padding:10px; background:var(--ui-card); border-bottom:1px solid var(--ui-border); flex-wrap:wrap; position:sticky; top:0; z-index:10; }
+  nav button { padding:8px 12px; border:1px solid var(--ui-border); border-radius:6px; background:var(--ui-button); color:var(--ui-text); cursor:pointer; font-size:14px; }
+  nav button.active { background:var(--ui-active); border-color:var(--ui-accent); }
   .page { display:none; padding:20px; max-width:420px; margin:auto; }
   .page.wide { max-width:700px; }
   .page.active { display:block; }
   h1 { font-size:20px; }
   h2 { font-size:16px; margin:15px 0 5px; }
-  h3 { font-size:14px; margin:15px 0 5px; color:#aaa; }
+  h3 { font-size:14px; margin:15px 0 5px; color:var(--ui-muted); }
   label { display:block; margin-top:12px; font-size:14px; }
-  input[type=number], input[type=range], select { width:100%; padding:6px; box-sizing:border-box; background:#222; color:#eee; border:1px solid #444; border-radius:4px; }
+  input[type=number], input[type=range], select { width:100%; padding:6px; box-sizing:border-box; background:var(--ui-card); color:var(--ui-text); border:1px solid var(--ui-border); border-radius:6px; }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline:2px solid var(--ui-focus); outline-offset:2px; }
   input[type=range] { padding:0; }
-  button.action { margin-top:15px; padding:10px; width:100%; font-size:15px; border-radius:8px; border:none; background:#333; color:#eee; }
-  button.action:active { background:#555; }
+  button.action { margin-top:15px; padding:10px; width:100%; font-size:15px; border-radius:8px; border:1px solid var(--ui-border); background:var(--ui-button); color:var(--ui-text); cursor:pointer; }
+  button.action:hover { background:var(--ui-hover); }
+  button.action:active { background:var(--ui-active); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
   .chk { display:flex; align-items:center; gap:8px; margin-top:12px; }
   .chk input { width:auto; }
-  .warn { background:#5c1a1a; color:#fff; padding:12px; border-radius:8px; margin-bottom:20px; font-weight:bold; font-size:14px; }
-  a.card { display:block; background:#333; color:#fff; padding:15px; border-radius:8px; margin-bottom:10px; text-decoration:none; cursor:pointer; }
-  #grid { display:inline-grid; grid-template-columns:repeat(32,9px); grid-template-rows:repeat(8,9px); gap:1px; background:#000; padding:8px; margin-bottom:15px; }
-  .px { width:9px; height:9px; background:#222; }
-  .px.on { background:#fff; }
-  .dpad { display:grid; grid-template-columns:60px 60px 60px; grid-template-rows:60px 60px 60px; gap:5px; justify-content:center; margin:10px auto; }
-  .dpad button { font-size:18px; padding:0; border:none; border-radius:8px; background:#333; color:#eee; }
-  .dpad button:active { background:#555; }
-  .row { display:flex; gap:8px; justify-content:center; margin:8px 0; flex-wrap:wrap; }
-  .row button { padding:12px 16px; font-size:15px; border-radius:8px; border:none; background:#333; color:#eee; }
-  .row button.active2 { background:#4a90d9; }
+  .warn { background:var(--ui-card); border:1px solid var(--ui-danger); color:var(--ui-text); padding:12px; border-radius:8px; margin-bottom:20px; font-weight:bold; font-size:14px; }
+  a.card { display:block; background:var(--ui-button); color:var(--ui-text); padding:15px; border:1px solid var(--ui-border); border-radius:8px; margin-bottom:10px; text-decoration:none; cursor:pointer; }
+  a.card:hover { background:var(--ui-hover); }
+  a.back { color:var(--ui-accent); text-decoration:none; }
   .val { font-weight:bold; }
-  .hint { color:#888; font-size:13px; margin-top:10px; }
-  .simhint { color:#ffcc66; font-size:12px; margin-top:4px; }
-  .levels { border-left:2px solid #333; padding-left:10px; margin-top:10px; }
-  fieldset { border:1px solid #333; border-radius:8px; margin-top:15px; padding:10px 12px; }
-  legend { padding:0 6px; color:#aaa; font-size:13px; }
+  .hint { color:var(--ui-muted); font-size:13px; margin-top:10px; }
+  .levels { border-left:2px solid var(--ui-border); padding-left:10px; margin-top:10px; }
+  fieldset { border:1px solid var(--ui-border); border-radius:8px; margin-top:15px; padding:10px 12px; }
+  legend { padding:0 6px; color:var(--ui-muted); font-size:13px; }
 
   /* Конструктор v2 */
   table.pinTable { width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
-  table.pinTable th, table.pinTable td { padding:6px 4px; border-bottom:1px solid #222; text-align:left; vertical-align:middle; }
-  .badge { display:inline-block; font-size:10px; padding:2px 6px; border-radius:4px; background:#333; color:#aaa; margin-right:3px; margin-bottom:2px; }
-  .badge.type { background:#204060; color:#a8d0ff; }
-  .badge.warn { background:#5c3a1a; color:#ffcc66; }
-  .badge.crit { background:#5c1a1a; color:#ff8888; }
-  .pipeline { display:flex; align-items:center; gap:8px; background:#1a1a1a; border-radius:8px; padding:15px; margin-top:10px; font-size:13px; flex-wrap:wrap; }
-  .pipeline .box { background:#204060; color:#a8d0ff; padding:8px 10px; border-radius:6px; }
-  .pipeline .arrow { color:#666; }
-  .ruleBlock { background:#1a1a1a; border-radius:8px; padding:12px; margin-top:12px; }
+  table.pinTable th, table.pinTable td { padding:6px 4px; border-bottom:1px solid var(--ui-border); text-align:left; vertical-align:middle; }
+  .badge { display:inline-block; font-size:10px; padding:2px 6px; border-radius:4px; background:var(--ui-button); color:var(--ui-muted); border:1px solid var(--ui-border); margin-right:3px; margin-bottom:2px; }
+  .badge.type { background:var(--ui-card); color:var(--ui-accent); border-color:var(--ui-accent); }
+  .badge.warn { background:var(--ui-card); color:var(--ui-warning); border-color:var(--ui-warning); }
+  .badge.crit { background:var(--ui-card); color:var(--ui-danger); border-color:var(--ui-danger); }
+  .pipeline { display:flex; align-items:center; gap:8px; background:var(--ui-card); border:1px solid var(--ui-border); border-radius:8px; padding:15px; margin-top:10px; font-size:13px; flex-wrap:wrap; }
+  .pipeline .box { background:var(--ui-card); color:var(--ui-accent); border:1px solid var(--ui-accent); padding:8px 10px; border-radius:6px; }
+  .pipeline .arrow { color:var(--ui-muted); }
+  .ruleBlock { background:var(--ui-card); border:1px solid var(--ui-border); border-radius:8px; padding:12px; margin-top:12px; }
   .ruleBlock h4 { margin:0 0 8px; font-size:14px; }
   .ruleCols { display:flex; gap:15px; flex-wrap:wrap; }
   .ruleCol { flex:1; min-width:150px; }
-  .ruleCol .colTitle { font-size:12px; color:#888; margin-bottom:6px; }
+  .ruleCol .colTitle { font-size:12px; color:var(--ui-muted); margin-bottom:6px; }
   .ruleCol label { display:flex; align-items:center; gap:6px; margin-top:6px; font-weight:normal; font-size:13px; }
   .ruleCol label input { width:auto; }
 </style>
 </head>
 <body>
 
-<div class="banner">Это браузерная симуляция веб-интерфейса — плата не подключена. Логика дисплея и меню повторена точно, но "педалирование" и реальная ручка газа эмулируются вручную.</div>
+<div class="banner">Это браузерная симуляция веб-интерфейса — плата не подключена. Симулятор дисплея и панели управления находится в прошивке (страница устройства), здесь — превью настроек.</div>
 
 <nav>
-  <button data-page="panel" class="active">Панель</button>
-  <button data-page="settingsHub">Настройки</button>
+  <button data-page="settingsHub" class="active">Настр.</button>
 </nav>
 
-<!-- ===================== ПАНЕЛЬ ===================== -->
-<div class="page active" id="page-panel">
-  <h2>Матрица 8x32 (превью)</h2>
-  <div id="grid"></div>
-
-  <h3>Виртуальная ручка газа (только в симуляторе)</h3>
-  <input type="range" min="0" max="100" value="0" id="virtThrottle">
-  <div class="simhint">Тянет "сырой" сигнал 0-100%, дальше проходит через калибровку из настроек газа (слепая зона).</div>
-
-  <h3>Джойстик (5 кнопок)</h3>
-  <div class="dpad">
-    <div></div><button onclick="onJoystick('up')">&uarr;</button><div></div>
-    <button onclick="onJoystick('left')">&larr;</button><button onclick="onJoystick('ok')">OK</button><button onclick="onJoystick('right')">&rarr;</button>
-    <div></div><button onclick="onJoystick('down')">&darr;</button><div></div>
-  </div>
-
-  <h3>Кнопки на руле</h3>
-  <div class="row">
-    <button id="btnHeadlight" onclick="toggleHeadlight()">Фара</button>
-    <button id="btnTurnLeft" onclick="toggleTurnLeft()">Поворот &larr;</button>
-    <button id="btnTurnRight" onclick="toggleTurnRight()">Поворот &rarr;</button>
-  </div>
-  <div class="row">
-    <button id="btnHorn" onmousedown="setHorn(true)" onmouseup="setHorn(false)" ontouchstart="setHorn(true)" ontouchend="setHorn(false)">Гудок (держать)</button>
-    <button id="btnBrake" onclick="toggleBrake()">Тормоз (тест)</button>
-  </div>
-
-  <h3>Состояние (для отладки)</h3>
-  <div class="hint" id="stateDump"></div>
-</div>
-
 <!-- ===================== ХАБ НАСТРОЕК ===================== -->
-<div class="page" id="page-settingsHub">
-  <h1>Настройки</h1>
-  <div class="warn">&#9888; Тормозные ручки должны быть ОБЯЗАТЕЛЬНО подключены напрямую в моторконтроллер для безопасности!</div>
+<div class="page active" id="page-settingsHub">
+  <h1>Меню</h1>
   <a class="card" onclick="showPage('settingsThrottle')">Газ &rarr;</a>
-  <a class="card" onclick="showPage('settingsPas')">PAS &rarr;</a>
-  <a class="card" onclick="showPage('settingsCruise')">Круиз-контроль &rarr;</a>
-  <a class="card" onclick="showPage('constructor')">Конструктор пинов и событий &rarr;</a>
+  <a class="card" onclick="showPage('settingsPas')">Педали &rarr;</a>
+  <a class="card" onclick="showPage('settingsCruise')">Круиз &rarr;</a>
+  <a class="card" onclick="showPage('constructor')">Пины и события &rarr;</a>
 </div>
 
 <!-- ===================== ГАЗ ===================== -->
 <div class="page" id="page-settingsThrottle">
-  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:#4a90d9">&larr; Настройки</a></p>
-  <h1>Настройка газа</h1>
+  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:var(--ui-accent)">&larr; Настройки</a></p>
+  <h1>Газ</h1>
 
   <fieldset>
     <legend>Калибровка (слепая зона)</legend>
@@ -130,12 +93,10 @@
   </fieldset>
 
   <fieldset>
-    <legend>Сглаживание разгона/торможения</legend>
+    <legend>Сглаживание разгона</legend>
     <div class="chk"><input type="checkbox" id="thrEnabled"><label for="thrEnabled">Сглаживание включено (по умолчанию — выключено, газ повторяет ручку 1:1)</label></div>
     <label>Плавность разгона: <span class="val" id="accelVal">0</span></label>
     <input type="range" min="0" max="99" id="accelSlider" value="0" oninput="document.getElementById('accelVal').innerText=this.value">
-    <label>Плавность торможения: <span class="val" id="decelVal">0</span></label>
-    <input type="range" min="0" max="99" id="decelSlider" value="0" oninput="document.getElementById('decelVal').innerText=this.value">
   </fieldset>
 
   <button class="action" onclick="saveThrottle()">Сохранить</button>
@@ -143,8 +104,8 @@
 
 <!-- ===================== PAS ===================== -->
 <div class="page" id="page-settingsPas">
-  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:#4a90d9">&larr; Настройки</a></p>
-  <h1>Настройка PAS</h1>
+  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:var(--ui-accent)">&larr; Настройки</a></p>
+  <h1>Педали</h1>
   <label>Количество уровней (0-9)</label>
   <input type="number" min="0" max="9" id="pasCount" value="5" oninput="renderPasLevels()">
   <div id="pasLevels" class="levels"></div>
@@ -154,8 +115,8 @@
 
 <!-- ===================== КРУИЗ ===================== -->
 <div class="page" id="page-settingsCruise">
-  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:#4a90d9">&larr; Настройки</a></p>
-  <h1>Настройка круиз-контроля</h1>
+  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:var(--ui-accent)">&larr; Настройки</a></p>
+  <h1>Круиз</h1>
   <label>Количество уровней (0-20)</label>
   <input type="number" min="0" max="20" id="cruiseCount" value="10" oninput="renderCruiseLevels()">
   <div id="cruiseLevels" class="levels"></div>
@@ -170,8 +131,8 @@
 
 <!-- ===================== КОНСТРУКТОР v2 ===================== -->
 <div class="page wide" id="page-constructor">
-  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:#4a90d9">&larr; Настройки</a></p>
-  <h1>Конструктор пинов и событий</h1>
+  <p><a href="#" onclick="showPage('settingsHub');return false" style="color:var(--ui-accent)">&larr; Настройки</a></p>
+  <h1>Пины и события</h1>
 
   <h3>Газ — особый случай (не событие, а поток сигнала)</h3>
   <div class="pipeline">
@@ -181,7 +142,7 @@
     <div class="arrow">&rarr;</div>
     <div class="box">Газ выход (ЦАП)</div>
   </div>
-  <p class="hint">Пины для входа/выхода газа назначаются в таблице ниже как обычно. Сама обработка настраивается отдельно — <a href="#" onclick="showPage('settingsThrottle');return false" style="color:#4a90d9">на странице "Газ"</a>.</p>
+  <p class="hint">Пины для входа/выхода газа назначаются в таблице ниже как обычно. Сама обработка настраивается отдельно — <a href="#" onclick="showPage('settingsThrottle');return false" style="color:var(--ui-accent)">на странице "Газ"</a>.</p>
 
   <h3>Пины платы</h3>
   <p class="hint">Для каждого физического пина выбери, какую роль он играет. Тип пина показан бэйджем — если пин не подходит по типу (например, не ЦАП для выхода газа), такая роль просто не появится в списке выбора.</p>
@@ -218,249 +179,7 @@ let state = {
   cruiseCancelOnThrottle: false,
   cruiseResumeAfterBrake: false,
   cruisePendingResume: false,
-  menuState: 'IDLE',
-  headlightOn: false,
-  turnLeftActive: false,
-  turnRightActive: false,
-  turnBlinkState: false,
-  hornActive: false,
-  brakeActive: false,
-  virtualThrottleRaw: 0,       // "сырой" сигнал с виртуальной ручки, 0-100%
-  throttleInMinPct: 0, throttleInMaxPct: 100,
-  throttleOutMinPct: 0, throttleOutMaxPct: 100,
 };
-
-function calibrateThrottle(rawPct){
-  const inMin = state.throttleInMinPct, inMax = Math.max(state.throttleInMaxPct, inMin+1);
-  const outMin = state.throttleOutMinPct, outMax = Math.max(state.throttleOutMaxPct, outMin+1);
-  const clamped = Math.min(Math.max(rawPct, inMin), inMax);
-  const norm = (clamped - inMin) / (inMax - inMin);
-  return Math.round(outMin + norm * (outMax - outMin));
-}
-function currentThrottlePct(){ return calibrateThrottle(state.virtualThrottleRaw); }
-
-let changeIndicator = null;
-function markChange(dir){ changeIndicator = {dir, until: Date.now()+450}; }
-
-// ===================== Шрифт 5x7 =====================
-const FONT = {
-  P:[0b11110,0b10001,0b10001,0b11110,0b10000,0b10000,0b10000],
-  T:[0b11111,0b00100,0b00100,0b00100,0b00100,0b00100,0b00100],
-  C:[0b01110,0b10001,0b10000,0b10000,0b10000,0b10001,0b01110],
-  B:[0b11110,0b10001,0b10001,0b11110,0b10001,0b10001,0b11110],
-  W:[0b10001,0b10001,0b10001,0b10101,0b10101,0b11011,0b10001],
-  E:[0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b11111],
-  L:[0b10000,0b10000,0b10000,0b10000,0b10000,0b10000,0b11111],
-  U:[0b10001,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110],
-  M:[0b10001,0b11011,0b10101,0b10101,0b10001,0b10001,0b10001],
-};
-const ARROW_LEFT  = [0b00001,0b00011,0b00111,0b01111,0b00111,0b00011,0b00001];
-const ARROW_RIGHT = [0b10000,0b11000,0b11100,0b11110,0b11100,0b11000,0b10000];
-const ARROW_UP    = [0b00100,0b01110,0b10101,0b00100,0b00100,0b00100,0b00100];
-const ARROW_DOWN  = [0b00100,0b00100,0b00100,0b00100,0b10101,0b01110,0b00100];
-const DIGITS = [
-  [0b01110,0b10001,0b10011,0b10101,0b11001,0b10001,0b01110],
-  [0b00100,0b01100,0b00100,0b00100,0b00100,0b00100,0b01110],
-  [0b01110,0b10001,0b00001,0b00010,0b00100,0b01000,0b11111],
-  [0b11111,0b00010,0b00100,0b00010,0b00001,0b10001,0b01110],
-  [0b00010,0b00110,0b01010,0b10010,0b11111,0b00010,0b00010],
-  [0b11111,0b10000,0b11110,0b00001,0b00001,0b10001,0b01110],
-  [0b00110,0b01000,0b10000,0b11110,0b10001,0b10001,0b01110],
-  [0b11111,0b00001,0b00010,0b00100,0b01000,0b01000,0b01000],
-  [0b01110,0b10001,0b10001,0b01110,0b10001,0b10001,0b01110],
-  [0b01110,0b10001,0b10001,0b01111,0b00001,0b00010,0b01100],
-];
-
-// ===================== Фреймбуфер и рендер грида =====================
-const gridEl = document.getElementById('grid');
-const cells = [];
-for (let r=0;r<8;r++){cells.push([]);for(let c=0;c<32;c++){const d=document.createElement('div');d.className='px';gridEl.appendChild(d);cells[r].push(d);}}
-let fb = Array.from({length:8},()=>Array(32).fill(false));
-
-function fbClear(){ fb = Array.from({length:8},()=>Array(32).fill(false)); }
-function fbDrawGlyph(glyph, xOffset){
-  if(!glyph) return;
-  for(let col=0; col<5; col++){
-    for(let row=0; row<7; row++){
-      const on = (glyph[row] >> (4-col)) & 1;
-      const x = xOffset+col;
-      if(x>=0 && x<32) fb[row][x] = !!on;
-    }
-  }
-}
-function fbDrawNumber(num, xOffset){
-  const s = String(num);
-  let x = xOffset;
-  for(const ch of s){ fbDrawGlyph(DIGITS[parseInt(ch)], x); x += 6; }
-  return x;
-}
-function renderGrid(){
-  for(let r=0;r<8;r++) for(let c=0;c<32;c++) cells[r][c].className = fb[r][c] ? 'px on' : 'px';
-}
-
-// ===================== Бегущая строка при "загрузке" =====================
-const BOOT_TEXT = "wellcum";
-let bootWide = [];
-let bootWidth = 0;
-(function buildBoot(){
-  let x = 0;
-  bootWide = Array.from({length:7},()=>[]);
-  for(const ch of BOOT_TEXT){
-    const g = FONT[ch.toUpperCase()];
-    if(g){
-      for(let col=0; col<5; col++) for(let row=0; row<7; row++) bootWide[row][x+col] = (g[row]>>(4-col))&1;
-      x += 6;
-    }
-  }
-  bootWidth = x;
-})();
-
-let bootOffset = -32;
-function bootStep(){
-  fbClear();
-  for(let col=0; col<32; col++){
-    const src = bootOffset + col;
-    if(src>=0 && src<bootWidth) for(let row=0;row<7;row++) fb[row][col] = !!bootWide[row][src];
-  }
-  renderGrid();
-  bootOffset++;
-  if(bootOffset > bootWidth){ clearInterval(bootTimer); startMainLoop(); }
-}
-const bootTimer = setInterval(bootStep, 80);
-
-// ===================== Основной цикл дисплея =====================
-function getCurrentMode(){
-  if(state.cruiseEngaged) return 'C';
-  if(state.pasCurrentLevel > 0) return 'P';
-  if(currentThrottlePct() > 5) return 'T';
-  return null;
-}
-
-function displayLoop(){
-  fbClear();
-  if(state.menuState === 'CRUISE_LEVEL'){
-    const pct = state.cruiseLevelPercent[state.cruiseSelectLevel-1] || 0;
-    fbDrawNumber(pct, 10);
-  } else {
-    const mode = getCurrentMode();
-    if(mode === 'P' || mode === 'C'){
-      fbDrawGlyph(FONT[mode], 1);
-      const pct = mode === 'P'
-        ? (state.pasLevelPercent[state.pasCurrentLevel-1] || 0)
-        : (state.cruiseLevelPercent[state.cruiseTargetLevel-1] || 0);
-      fbDrawNumber(pct, 8);
-    } else if(mode === 'T'){
-      fbDrawGlyph(FONT.T, 13);
-    }
-    if(state.turnLeftActive && state.turnBlinkState) fbDrawGlyph(ARROW_LEFT, 0);
-    if(state.turnRightActive && state.turnBlinkState) fbDrawGlyph(ARROW_RIGHT, 27);
-    if(state.brakeActive) for(let x=0;x<32;x++) fb[7][x] = true;
-  }
-
-  if(changeIndicator){
-    if(Date.now() < changeIndicator.until){
-      fbDrawGlyph(changeIndicator.dir === 'up' ? ARROW_UP : ARROW_DOWN, 27);
-    } else {
-      changeIndicator = null;
-    }
-  }
-
-  renderGrid();
-  dumpState();
-}
-
-function startMainLoop(){
-  setInterval(displayLoop, 100);
-  setInterval(()=>{ if(state.turnLeftActive || state.turnRightActive) state.turnBlinkState = !state.turnBlinkState; }, 500);
-}
-
-// ===================== Джойстик / меню =====================
-function onJoystick(dir){
-  if(state.menuState === 'IDLE'){
-    if(dir === 'ok'){
-      if(state.cruiseEngaged){
-        state.cruiseEngaged = false;
-        state.cruisePendingResume = false;
-      } else if(state.cruiseLevelsCount > 0){
-        state.cruiseSelectLevel = state.cruiseUseLastLevel ? state.cruiseTargetLevel : state.cruiseDefaultLevel;
-        state.cruiseSelectLevel = Math.min(Math.max(state.cruiseSelectLevel,1), state.cruiseLevelsCount);
-        state.menuState = 'CRUISE_LEVEL';
-      }
-    } else if(dir === 'up'){
-      if(state.pasCurrentLevel < state.pasLevelsCount){ state.pasCurrentLevel++; markChange('up'); }
-    } else if(dir === 'down'){
-      if(state.pasCurrentLevel > 0){ state.pasCurrentLevel--; markChange('down'); }
-    }
-  } else if(state.menuState === 'CRUISE_LEVEL'){
-    if(dir === 'up'){
-      if(state.cruiseSelectLevel < state.cruiseLevelsCount){ state.cruiseSelectLevel++; markChange('up'); }
-    } else if(dir === 'down'){
-      if(state.cruiseSelectLevel > 1){ state.cruiseSelectLevel--; markChange('down'); }
-    } else if(dir === 'ok'){
-      state.cruiseTargetLevel = state.cruiseSelectLevel;
-      state.cruiseEngaged = true;
-      state.cruisePendingResume = false;
-      state.menuState = 'IDLE';
-    } else if(dir === 'left'){
-      state.menuState = 'IDLE';
-    }
-  }
-}
-
-// ===================== Кнопки руля =====================
-function toggleHeadlight(){
-  state.headlightOn = !state.headlightOn;
-  document.getElementById('btnHeadlight').classList.toggle('active2', state.headlightOn);
-}
-function toggleTurnLeft(){
-  state.turnLeftActive = !state.turnLeftActive;
-  if(state.turnLeftActive) state.turnRightActive = false;
-  updateTurnButtons();
-}
-function toggleTurnRight(){
-  state.turnRightActive = !state.turnRightActive;
-  if(state.turnRightActive) state.turnLeftActive = false;
-  updateTurnButtons();
-}
-function updateTurnButtons(){
-  document.getElementById('btnTurnLeft').classList.toggle('active2', state.turnLeftActive);
-  document.getElementById('btnTurnRight').classList.toggle('active2', state.turnRightActive);
-}
-function setHorn(on){
-  state.hornActive = on;
-  document.getElementById('btnHorn').classList.toggle('active2', on);
-}
-function toggleBrake(){
-  state.brakeActive = !state.brakeActive;
-  document.getElementById('btnBrake').classList.toggle('active2', state.brakeActive);
-  if(state.brakeActive && state.cruiseEngaged){
-    state.cruiseEngaged = false;
-    if(state.cruiseResumeAfterBrake) state.cruisePendingResume = true;
-  }
-}
-document.getElementById('virtThrottle').addEventListener('input', function(){
-  state.virtualThrottleRaw = parseInt(this.value);
-  const pct = currentThrottlePct();
-  if(state.cruiseEngaged && state.cruiseCancelOnThrottle && pct > 10){
-    state.cruiseEngaged = false;
-  }
-  if(state.cruisePendingResume && !state.brakeActive && pct > 10){
-    state.cruiseEngaged = true;
-    state.cruisePendingResume = false;
-  }
-});
-
-function dumpState(){
-  const el = document.getElementById('stateDump');
-  el.innerHTML =
-    'Фара: ' + (state.headlightOn?'ВКЛ':'выкл') +
-    ' | ПАС уровень: ' + state.pasCurrentLevel + '/' + state.pasLevelsCount +
-    ' | Круиз: ' + (state.cruiseEngaged ? ('ВКЛ, ' + state.cruiseLevelPercent[state.cruiseTargetLevel-1] + '%') : 'выкл') +
-    (state.cruisePendingResume ? ' (ждёт восстановления)' : '') +
-    ' | Газ после калибровки: ' + currentThrottlePct() + '%' +
-    ' | Меню: ' + state.menuState;
-}
-
 // ===================== Настройка: Газ =====================
 function onCalibChange(){
   state.throttleInMinPct = parseInt(document.getElementById('inMinSlider').value);
@@ -475,15 +194,21 @@ function onCalibChange(){
 function saveThrottle(){ alert('Сохранено (эмуляция, на реальной плате уйдёт в NVS)'); }
 
 // ===================== Настройка: PAS =====================
-function renderPasLevels(){
-  const count = parseInt(document.getElementById('pasCount').value) || 0;
-  state.pasLevelsCount = count;
-  const div = document.getElementById('pasLevels');
-  div.innerHTML = '';
+function renderSettingsLevels(containerId, values, count, label, decimals=false){
+  const div=document.getElementById(containerId); div.replaceChildren();
+  count=Math.max(0, Math.min(Number(count)||0, 100));
   for(let i=0;i<count;i++){
-    const val = state.pasLevelPercent[i] !== undefined ? state.pasLevelPercent[i] : 0;
-    div.innerHTML += '<label>Уровень '+(i+1)+' — усилие (0-100%)</label><input type="number" min="0" max="100" value="'+val+'" onchange="state.pasLevelPercent['+i+']=parseInt(this.value)">';
+    const text=document.createElement('label'); text.textContent=label+' '+(i+1);
+    const input=document.createElement('input'); input.type='number'; input.min='0'; input.max='100';
+    if(decimals) input.step='0.1'; input.value=values[i] ?? 0;
+    input.oninput=()=>values[i]=decimals ? (parseFloat(input.value)||0) : (parseInt(input.value)||0);
+    div.append(text,input);
   }
+}
+function renderPasLevels(){
+  const count=parseInt(document.getElementById('pasCount').value)||0;
+  state.pasLevelsCount=count;
+  renderSettingsLevels('pasLevels',state.pasLevelPercent,count,'Уровень — усилие (0-100%)');
 }
 function autoDistributePas(){
   const count = state.pasLevelsCount;
@@ -495,14 +220,9 @@ renderPasLevels();
 
 // ===================== Настройка: Круиз =====================
 function renderCruiseLevels(){
-  const count = parseInt(document.getElementById('cruiseCount').value) || 0;
-  state.cruiseLevelsCount = count;
-  const div = document.getElementById('cruiseLevels');
-  div.innerHTML = '';
-  for(let i=0;i<count;i++){
-    const val = state.cruiseLevelPercent[i] !== undefined ? state.cruiseLevelPercent[i] : 0;
-    div.innerHTML += '<label>Уровень '+(i+1)+' — цель (0-100%)</label><input type="number" min="0" max="100" value="'+val+'" onchange="state.cruiseLevelPercent['+i+']=parseInt(this.value)">';
-  }
+  const count=parseInt(document.getElementById('cruiseCount').value)||0;
+  state.cruiseLevelsCount=count;
+  renderSettingsLevels('cruiseLevels',state.cruiseLevelPercent,count,'Уровень — цель (0-100%)',true);
 }
 function autoDistributeCruise(){
   const count = state.cruiseLevelsCount;

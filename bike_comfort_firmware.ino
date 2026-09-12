@@ -602,13 +602,12 @@ void handleThrottlePage() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Газ</title>
 <style>
-body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto}
-label{display:block;margin-top:15px}
-input[type=range]{width:100%}
+:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47}
+body{font-family:sans-serif;padding:20px;max-width:520px;margin:auto;background:var(--ui-bg);color:#eee}
+label{display:block;margin-top:12px;line-height:1.35}input{width:100%;padding:8px;box-sizing:border-box;background:var(--ui-card);color:#eee;border:1px solid var(--ui-border);border-radius:6px}input[type=range]{padding:0}
 .val{font-weight:bold}
-button{margin-top:20px;padding:10px;width:100%;font-size:16px}
-.chk{display:flex;align-items:center;gap:8px;margin-top:15px}
-.chk input{width:auto}
+button{margin-top:15px;padding:10px;width:100%;font-size:16px;border:1px solid var(--ui-border);border-radius:7px;background:var(--ui-button);color:#eee;cursor:pointer}button:hover{background:var(--ui-hover)}button:active{background:var(--ui-active)}button:focus-visible,input:focus-visible{outline:2px solid #8b949e;outline-offset:2px}
+.chk{display:flex;align-items:center;gap:8px;margin-top:12px}.chk input{width:auto}.chk label{margin-top:0}
 </style></head><body>
 <h1>Настройка газа</h1>
 

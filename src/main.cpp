@@ -119,6 +119,18 @@ extern bool cruiseEngaged;
 unsigned long cpuMeasureStartMs = 0;
 unsigned long cpuBusyTimeMicros = 0;
 int cpuUsagePercent = 0;
+// Секционный профайлер: накопители времени (мкс) по секциям контура за окно
+// измерения (1 с) и их проценты — позволяют увидеть, какая функция ест CPU.
+unsigned long cpuUsPas = 0;
+unsigned long cpuUsPasBtn = 0;
+unsigned long cpuUsThrottle = 0;
+unsigned long cpuUsLight = 0;
+unsigned long cpuUsSound = 0;
+int cpuPasPct = 0;
+int cpuPasBtnPct = 0;
+int cpuThrottlePct = 0;
+int cpuLightPct = 0;
+int cpuSoundPct = 0;
 
 // ================= Real-time telemetry variables ================
 volatile float hwThrottleInV = 0.0f;
@@ -152,7 +164,12 @@ void handleSystemStatus() {
   float chipTemp = temperatureRead(); // Read internal temperature sensor
 
   String json = "{";
-  json += "\"cpu\":" + String(cpuUsagePercent) + ","; // Assuming cpuUsagePercent is globally available and updated
+  json += "\"cpu\":" + String(cpuUsagePercent) + ",";
+  json += "\"cpu_pas\":" + String(cpuPasPct) + ",";
+  json += "\"cpu_pas_btn\":" + String(cpuPasBtnPct) + ",";
+  json += "\"cpu_throttle\":" + String(cpuThrottlePct) + ",";
+  json += "\"cpu_light\":" + String(cpuLightPct) + ",";
+  json += "\"cpu_sound\":" + String(cpuSoundPct) + ",";
   json += "\"ram_pct\":" + String(ramPct) + ",";
   json += "\"ram_free_kb\":" + String(freeHeap / 1024) + ",";
   json += "\"ram_total_kb\":" + String(totalHeap / 1024) + ",";
@@ -196,7 +213,7 @@ void apSettingsLoad();
 
 // ================= ТОРМОЗ =================
 bool isBrakePressed() { return digitalRead(BRAKE_PIN) == LOW; }
-bool ownBrakeCutoffEnabled = true; // дублировать отключение газа по тормозу (доп. к контроллеру)
+bool ownBrakeCutoffEnabled = true; // всегда включено; настройка скрыта из веб-интерфейса
 
 // ================= ГАЗ: аппаратное согласование напряжений =================
 // У ESP32 АЦП/ЦАП работают 0-3.3В, а ручка газа/контроллер — обычно 0-4.2В.
@@ -363,7 +380,7 @@ void throttleSettingsLoad() {
   throttleSoftStopEnabled = prefs.getInt("spEn", 0) != 0;
   throttleSoftStartMs = prefs.getULong("ssMs", 500);
   throttleSoftStopMs = prefs.getULong("spMs", 500);
-  ownBrakeCutoffEnabled = prefs.getInt("brakeCut", 1) != 0;
+  ownBrakeCutoffEnabled = true; // всегда включено, настройка пользователю не показывается
   prefs.end();
 }
 
@@ -705,7 +722,18 @@ void updateThrottle() {
   // функции; удержание throttleOutMinV никогда не должно работать при тормозе.
   bool brakePressed = isBrakePressed();
 
-  int raw = analogRead(THROTTLE_ADC_PIN);
+  int raw;
+  // АЦП на ESP32 дорогой (~50-100 мкс на чтение): на 1 кГц это до ~10% CPU.
+  // Децимируем выборку до 200 Гц (раз в 5 мс) — для ручки газа с рампами
+  // 200-2000 мс задержка в 5 мс неощутима, а PAS/тормоз остаются на 1 кГц.
+  static int cachedRaw = 0;
+  static unsigned long lastAdcSampleMs = 0;
+  unsigned long adcNowMs = millis();
+  if (adcNowMs - lastAdcSampleMs >= 5) {
+    cachedRaw = analogRead(THROTTLE_ADC_PIN);
+    lastAdcSampleMs = adcNowMs;
+  }
+  raw = cachedRaw;
   float adcPinV = raw * HW_MAX_VOLTAGE / 4095.0f;
   // На ножке ESP32 напряжение уже ослаблено делителем — пересчитываем
   // обратно в реальное напряжение на проводе ручки газа.
@@ -830,15 +858,52 @@ void updateThrottle() {
 // ================= Общий компонент: Статус-бар в шапке (Функции-генераторы) =================
 String getTopBarCss() {
   return String(R"rawliteral(
-.top-bar-sticky{position:sticky;top:0;left:0;right:0;z-index:9999;background:#181818;border-bottom:1px solid #333;padding:8px 12px;margin:-20px -20px 15px -20px;font-size:12px;color:#bbb;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,0.5)}
+:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#8b949e;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c}
+.top-bar-sticky{position:sticky;top:0;left:0;right:0;z-index:9999;background:var(--ui-card);border-bottom:1px solid var(--ui-border);padding:8px 12px;margin:-20px -20px 15px -20px;font-size:12px;color:var(--ui-muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
 .tb-item{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-.tb-link{color:#4a90d9;text-decoration:none;padding:2px 6px;border-radius:4px;background:#242424;border:1px solid #3a3a3a;transition:background .2s, border-color .2s}
-.tb-link:hover{background:#303030;border-color:#555;color:#70b0ff}
+.tb-link{color:var(--ui-accent);text-decoration:none;padding:2px 6px;border-radius:4px;background:var(--ui-button);border:1px solid var(--ui-border);transition:background .2s, border-color .2s}
+.tb-link:hover{background:var(--ui-hover);border-color:var(--ui-muted);color:var(--ui-text)}
 .tb-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-.dot-green{background:#2ecc71;box-shadow:0 0 5px #2ecc71}
-.dot-yellow{background:#f1c40f;box-shadow:0 0 5px #f1c40f}
-.dot-red{background:#e74c3c}
-.dot-gray{background:#666}
+.dot-green{background:var(--ui-success);box-shadow:0 0 5px var(--ui-success)}
+.dot-yellow{background:var(--ui-warning);box-shadow:0 0 5px var(--ui-warning)}
+.dot-red{background:var(--ui-danger)}
+.dot-gray{background:var(--ui-muted)}
+)rawliteral");
+}
+
+String getSettingsCss() {
+  return String(R"rawliteral(
+:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#8b949e;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c}
+body{font-family:sans-serif;padding:20px;max-width:520px;margin:auto;background:var(--ui-bg);color:var(--ui-text)}
+label{display:block;margin-top:12px;line-height:1.35}input,select{width:100%;padding:8px;box-sizing:border-box;background:var(--ui-card);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;font:inherit}input[type=range]{padding:0}
+button{margin-top:15px;padding:10px;width:100%;font-size:16px;border:1px solid var(--ui-border);border-radius:7px;background:var(--ui-button);color:var(--ui-text);cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s}
+button:hover{background:var(--ui-hover)}button:active{background:var(--ui-active)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #8b949e;outline-offset:2px}button:disabled{opacity:.45;cursor:not-allowed}
+.chk{display:flex;gap:8px;align-items:center;margin-top:12px}.chk input{width:auto}.chk label{margin-top:0}
+fieldset{border:1px solid var(--ui-border);border-radius:8px;margin-top:15px;padding:10px 12px;background:var(--ui-card)}legend{padding:0 6px;color:var(--ui-muted);font-size:13px}.levels{border-left:2px solid var(--ui-border);padding-left:10px;margin-top:10px}.hint{color:var(--ui-muted);font-size:13px}.warn{color:var(--ui-text);font-size:13px;margin-top:6px}.cal-btn{margin-top:4px}
+.card{display:block;background:var(--ui-button);color:var(--ui-text);padding:15px;border:1px solid var(--ui-border);border-radius:8px;margin-bottom:10px;text-decoration:none;cursor:pointer}.card:hover{background:var(--ui-hover)}
+a.back{color:var(--ui-accent);text-decoration:none}
+)rawliteral");
+}
+
+String getSettingsJs() {
+  return String(R"rawliteral(
+<script>
+function renderLevelFields(containerId, inputName, values, count, label, max) {
+  const div=document.getElementById(containerId); if(!div) return;
+  const safeCount=Math.max(0, Math.min(Number(count)||0, Number(max)||100));
+  div.replaceChildren();
+  for(let i=0;i<safeCount;i++) {
+    const text=document.createElement('label'); text.textContent=label+' '+(i+1);
+    const input=document.createElement('input'); input.type='number'; input.className='lvl-input'; input.name=inputName+i;
+    input.min='0'; input.max='100'; input.value=values[i] ?? 0;
+    div.append(text,input);
+  }
+}
+function distributeLevels(values,count,start=0,end=100) {
+  count=Math.max(0,Number(count)||0); if(!count) return;
+  for(let i=0;i<count;i++) values[i]=count===1?end:Math.round((start+i*(end-start)/(count-1))*10)/10;
+}
+</script>
 )rawliteral");
 }
 
@@ -849,10 +914,10 @@ String getTopBarHtml() {
     <span>CPU:</span> <b id="tbCpu">0%</b>
   </div>
   <div class="tb-item" title="Оперативная память (занято / свободно)">
-    <span>RAM:</span> <b id="tbRam">0%</b> <span id="tbRamKb" style="color:#888;font-size:11px">(0k)</span>
+    <span>RAM:</span> <b id="tbRam">0%</b> <span id="tbRamKb" style="color:var(--ui-muted);font-size:11px">(0k)</span>
   </div>
   <div class="tb-item" title="Flash память (прошивка / всего)">
-    <span>ROM:</span> <span id="tbRom" style="color:#bbb">0k</span>
+    <span>ROM:</span> <span id="tbRom" style="color:var(--ui-muted)">0k</span>
   </div>
   <a href="/wifi" class="tb-item tb-link" title="Настройки Wi-Fi">
     <span>WiFi:</span>
@@ -865,7 +930,7 @@ String getTopBarHtml() {
   <div class="tb-item" title="Bluetooth (не используется)" style="opacity:0.7">
     <span>BT:</span>
     <span class="tb-dot dot-gray"></span>
-    <span style="color:#777">Выкл</span>
+    <span style="color:var(--ui-muted)">Выкл</span>
   </div>
 </div>
 )rawliteral");
@@ -957,15 +1022,15 @@ void handleDebugPage() {
 <style>
 )rawliteral" + getTopBarCss() + R"rawliteral(
 
-body{background:#111;color:#eee;font-family:sans-serif;padding:15px}
+body{background:var(--ui-bg);color:var(--ui-text);font-family:sans-serif;padding:15px}
 canvas{background:#000;border-radius:6px;width:100%;max-width:700px;display:block}
-.tbtn{background:#333;color:#eee;border:1px solid #555;padding:5px 12px;border-radius:4px;cursor:pointer;margin-right:5px;font-size:13px;transition:background .2s}
-.tbtn:hover{background:#444}
+.tbtn{background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);padding:5px 12px;border-radius:4px;cursor:pointer;margin-right:5px;font-size:13px;transition:background .2s}
+.tbtn:hover{background:var(--ui-hover)}
 .legend{display:flex;gap:15px;flex-wrap:wrap;margin:10px 0;font-size:13px}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
 #vals{font-size:14px;margin-top:10px;line-height:1.6}
-a{color:#4a90d9}
+a{color:var(--ui-accent)}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
@@ -975,7 +1040,7 @@ a{color:#4a90d9}
   <span style="font-size:14px;">Масштаб времени:</span>
   <button type="button" class="tbtn" onclick="setTimeScale(1)" id="tb1">1с</button>
   <button type="button" class="tbtn" onclick="setTimeScale(3)" id="tb3">3с</button>
-  <button type="button" class="tbtn" onclick="setTimeScale(5)" id="tb5" style="background:#4a90d9;color:#fff;">5с</button>
+  <button type="button" class="tbtn" onclick="setTimeScale(5)" id="tb5" style="background:var(--ui-accent);color:var(--ui-text);">5с</button>
   <button type="button" class="tbtn" onclick="setTimeScale(10)" id="tb10">10с</button>
   <button type="button" class="tbtn" onclick="setTimeScale(30)" id="tb30">30с</button>
   <label style="margin-left:10px;font-weight:bold;font-size:14px;">
@@ -984,10 +1049,10 @@ a{color:#4a90d9}
 </div>
 <canvas id="chart" width="700" height="320"></canvas>
 <div class="legend">
-<span><span class="dot" style="background:#4a90d9"></span>Газ вход, В</span>
-<span><span class="dot" style="background:#e74c3c"></span>Газ выход, В</span>
-<span><span class="dot" style="background:#f39c12"></span>Тормоз</span>
-<span><span class="dot" style="background:#2ecc71"></span>PAS активен</span>
+<span><span class="dot" style="background:var(--ui-accent)"></span>Газ вход, В</span>
+<span><span class="dot" style="background:var(--ui-danger)"></span>Газ выход, В</span>
+<span><span class="dot" style="background:var(--ui-warning)"></span>Тормоз</span>
+<span><span class="dot" style="background:var(--ui-success)"></span>PAS активен</span>
 <span><span class="dot" style="background:#9b59b6"></span>Кнопка PAS</span>
 </div>
 <div id="vals">Осциллограф отключен. Включите галочку для запуска.</div>
@@ -1118,27 +1183,21 @@ void handleWifiPage() {
   String html = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WiFi и Точка доступа</title>
+<title>Связь и сеть</title>
 <style>
-)rawliteral" + getTopBarCss() + R"rawliteral(
-
-body{background:#111;color:#eee;font-family:sans-serif;padding:15px;max-width:420px;margin:auto}
-.card{background:#222;border:1px solid #333;border-radius:8px;padding:15px;margin-bottom:20px}
-h2{font-size:18px;margin-top:0;color:#4a90d9;border-bottom:1px solid #333;padding-bottom:8px}
-button{padding:10px;width:100%;font-size:15px;border-radius:8px;border:none;background:#333;color:#eee;margin-top:10px;cursor:pointer}
-button:hover{background:#444}
-button.primary{background:#2980b9;color:#fff}
-button.primary:hover{background:#3498db}
-input{width:100%;padding:9px;box-sizing:border-box;background:#181818;color:#eee;border:1px solid #444;border-radius:4px;margin-top:6px;margin-bottom:10px;font-size:14px}
-.net{padding:10px;background:#1a1a1a;border-radius:6px;margin-top:6px;cursor:pointer;display:flex;justify-content:space-between;border:1px solid #2a2a2a}
-.net:active{background:#333}
-a{color:#4a90d9;text-decoration:none}
-.status{color:#aaa;font-size:13px;margin:8px 0;line-height:1.4}
-.hint{color:#888;font-size:12px;margin-top:-6px;margin-bottom:10px;display:block}
+)rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
+h2{font-size:15px;margin-top:0;color:var(--ui-muted);border-bottom:1px solid var(--ui-border);padding-bottom:8px}
+.net{padding:10px;background:var(--ui-card);border-radius:6px;margin-top:6px;cursor:pointer;display:flex;justify-content:space-between;border:1px solid var(--ui-border)}
+.net:active{background:var(--ui-hover)}
+.net .rssi{color:var(--ui-muted);font-size:12px}
+.status{color:var(--ui-muted);font-size:13px;margin:8px 0;line-height:1.4}
+.hint{color:var(--ui-muted);font-size:12px;margin-top:-6px;margin-bottom:10px;display:block}
+.back-link{color:var(--ui-muted);text-decoration:none}.back-link:hover{color:var(--ui-text)}
+.message-success{color:var(--ui-success)}.message-error{color:var(--ui-danger)}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
-<p><a href="/">&larr; Меню</a></p>
+<p><a class="back-link" href="/">&larr; Меню</a></p>
 <h1>Связь и сеть</h1>
 
 <div class="card">
@@ -1155,7 +1214,7 @@ a{color:#4a90d9;text-decoration:none}
     <input type="text" id="ssid" name="ssid" placeholder="Выберите сеть или введите вручную">
     <label>Пароль сети:</label>
     <input type="password" id="pass" name="pass" placeholder="Пароль Wi-Fi">
-    <button type="submit" class="primary">Подключиться к Wi-Fi</button>
+    <button type="submit">Подключиться к Wi-Fi</button>
   </form>
 </div>
 
@@ -1180,7 +1239,7 @@ a{color:#4a90d9;text-decoration:none}
   html += R"rawliteral(" placeholder="Оставьте пустым для открытой сети">
     <span class="hint">Пароль отображается открыто. Оставьте пустым для открытой точки (без пароля). Для WPA2 нужно минимум 8 символов.</span>
 
-    <button type="submit" class="primary">Сохранить настройки точки доступа</button>
+    <button type="submit">Сохранить настройки точки доступа</button>
   </form>
   <div id="ap_status" class="status" style="margin-top:8px"></div>
 </div>
@@ -1191,10 +1250,10 @@ function scan() {
   fetch('/wifi/scan').then(r=>r.json()).then(list=>{
     if (!list || !list.length) { document.getElementById('nets').innerHTML = '<i>Сети не найдены</i>'; return; }
     document.getElementById('nets').innerHTML = list.map(n =>
-      '<div class="net" onclick="pick(\''+n.ssid.replace(/'/g,"")+'\')"><span>'+n.ssid+'</span><span style="color:#888">'+n.rssi+' dBm</span></div>'
+      '<div class="net" onclick="pick(\''+n.ssid.replace(/'/g,"")+'\')"><span>'+n.ssid+'</span><span class="rssi">'+n.rssi+' dBm</span></div>'
     ).join('');
   }).catch(() => {
-    document.getElementById('nets').innerHTML = '<span style="color:#e74c3c">Ошибка сканирования</span>';
+    document.getElementById('nets').innerHTML = '<span class="message-error">Ошибка сканирования</span>';
   });
 }
 
@@ -1220,9 +1279,9 @@ document.getElementById('f_ap').addEventListener('submit', function(e){
   const st = document.getElementById('ap_status');
   st.innerHTML = '<i>Сохранение точки доступа...</i>';
   fetch('/wifi/ap/save', {method:'POST', body:d}).then(r=>r.text()).then(txt=>{
-    st.innerHTML = '<b style="color:#2ecc71">Настройки точки доступа сохранены и применены!</b>';
+    st.innerHTML = '<b class="message-success">Настройки точки доступа сохранены и применены!</b>';
   }).catch(e=>{
-    st.innerHTML = '<span style="color:#e74c3c">Ошибка: ' + e.message + '</span>';
+    st.innerHTML = '<span class="message-error">Ошибка: ' + e.message + '</span>';
   });
 });
 </script>
@@ -1273,64 +1332,63 @@ void handleHub() {
   String html = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenBike Controller v0.1.6-alpha</title>
+<title>OpenBike Controller v0.2.0-alpha</title>
 <style>
 )rawliteral" + getTopBarCss() + R"rawliteral(
-body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#111;color:#eee}
-.header{text-align:center;margin-bottom:16px;}
-.header h1{margin:0;font-size:24px;}
-.header .version{color:#888;font-size:14px;}
-a.card{display:block;background:#333;color:#fff;padding:15px;border-radius:8px;margin-bottom:10px;text-decoration:none;transition:background .2s}
-a.card:active{background:#444}
-.warn{background:#5c1a1a;padding:12px;border-radius:8px;margin-bottom:16px;font-weight:bold;font-size:13px}
+:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#8b949e;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-dark:#0a0f0d}
+body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:var(--ui-bg);color:var(--ui-text)}
+.header{text-align:center;margin-bottom:16px}.header h1{margin:0;font-size:24px}.header .version{color:var(--ui-muted);font-size:14px}
+a.card{display:block;background:var(--ui-button);color:var(--ui-text);padding:15px;border:1px solid var(--ui-border);border-radius:8px;margin-bottom:10px;text-decoration:none;transition:background .2s,border-color .2s}
+a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active)}
+.warn{background:var(--ui-card);border:1px solid var(--ui-danger);color:var(--ui-text);padding:12px;border-radius:8px;margin-bottom:16px;font-weight:bold;font-size:13px}
 
 /* LED Matrix Simulator */
-.matrix-card{background:#161616;border:2px solid #2a2a2a;border-radius:14px;padding:12px;margin-bottom:14px;text-align:center;box-shadow:0 6px 18px rgba(0,0,0,0.7);transition:all .2s}
-.matrix-title{font-size:11px;font-weight:bold;color:#777;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}
-.sim-matrix-area{display:flex;justify-content:center;align-items:center;margin-bottom:10px}
-#ledMatrixCanvas{background:#000;border:3px solid #222;border-radius:8px;box-shadow:inset 0 0 10px rgba(0,0,0,0.8);display:block;max-width:100%;height:auto}
+.matrix-card{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:12px;padding:10px;margin-bottom:12px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.4);transition:all .2s}
+.matrix-title{font-size:11px;font-weight:bold;color:var(--ui-muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+.sim-matrix-area{display:flex;justify-content:center;align-items:center;margin-bottom:8px}
+#ledMatrixCanvas{background:#000;border:2px solid var(--ui-border);border-radius:6px;box-shadow:inset 0 0 8px rgba(0,0,0,.7);display:block;max-width:100%;height:auto}
 
-.sim-controls-panel{display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:12px;background:#1a1a1a;border:1px solid #2d2d2d;border-radius:10px;padding:10px}
-.sim-btns-group{display:flex;flex-direction:column;gap:8px;flex:1}
-.sim-side-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;font-size:13px;font-weight:bold;border-radius:8px;border:2px solid #383838;background:#242424;color:#eee;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:all .1s}
-.sim-side-btn:active, .sim-side-btn.active{background:#e74c3c;border-color:#c0392b;color:#fff}
-.sim-side-btn.pedal-btn:active, .sim-side-btn.pedal-btn.active{background:#27ae60;border-color:#2ecc71;color:#fff}
+/* Компактная панель симуляции */
+.simulator-layout{display:flex;flex-wrap:nowrap;gap:8px;align-items:stretch;margin-bottom:12px}
+.sim-left-col{flex:0 1 75%;min-width:0;display:flex;flex-direction:column;gap:8px}
+.sim-section-title{font-size:10px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:var(--ui-muted);margin-bottom:2px}
+.sim-btns-group{display:flex;gap:6px;width:100%}
+.sim-side-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 6px;font-size:13px;font-weight:bold;border-radius:8px;border:1px solid var(--ui-border);background:var(--ui-button);color:var(--ui-text);cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:background .1s,border-color .1s}
+.sim-btn-ico{font-size:18px;line-height:1}.sim-side-btn:hover{background:var(--ui-hover)}.sim-side-btn:active{background:var(--ui-active)}
+.sim-side-btn:focus-visible,.dpad-btn:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
+.sim-side-btn.active{background:var(--ui-card);border-color:var(--ui-danger);color:var(--ui-text)}
+.sim-side-btn.pedal-btn.active{background:var(--ui-card);border-color:var(--ui-success);color:var(--ui-text)}
 
-.sim-throttle-group{display:flex;flex-direction:column;align-items:center;gap:6px;background:#202020;border:1px solid #333;border-radius:8px;padding:8px 10px}
-.sim-throttle-label{font-size:11px;font-weight:900;color:#888;text-transform:uppercase}
-.sim-slider-vert{writing-mode:bt-lr;-webkit-appearance:slider-vertical;width:24px;height:75px;cursor:pointer;accent-color:#e67e22}
-.sim-throttle-val{font-size:12px;font-weight:bold;color:#e67e22;min-width:36px;text-align:center}
+.sim-throttle-group{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--ui-card);border:1px solid var(--ui-border);border-radius:10px;padding:8px 6px}
+.sim-throttle-label{font-size:10px;font-weight:900;color:var(--ui-muted);text-transform:uppercase;letter-spacing:1px}
+.sim-slider-vert{writing-mode:vertical-lr;direction:rtl;-webkit-appearance:slider-vertical;appearance:slider-vertical;width:24px;height:150px;cursor:pointer;accent-color:var(--ui-accent)}
+.sim-throttle-val{font-size:12px;font-weight:bold;color:var(--ui-accent);min-width:36px;text-align:center}
 
 /* D-Pad Джойстик */
-.joystick-panel{background:#181818;border:2px solid #333;border-radius:18px;padding:16px;margin-bottom:16px;box-shadow:0 8px 24px rgba(0,0,0,0.6)}
-.joy-screen{background:#0a0f0d;border:2px solid #1e3a29;border-radius:10px;padding:10px 14px;margin-bottom:16px;text-align:center;font-family:monospace}
-.screen-mode{font-size:13px;font-weight:bold;letter-spacing:1px;color:#888;text-transform:uppercase}
-.screen-mode.mode-pas{color:#2ecc71}
-.screen-mode.mode-cruise{color:#3498db}
-.screen-mode.mode-off{color:#e74c3c}
-.screen-val{font-size:26px;font-weight:900;color:#fff;margin:4px 0}
-.screen-status{font-size:11px;color:#888;font-weight:bold;text-transform:uppercase}
-.screen-status.dirty{color:#f39c12;animation:blink 1s infinite}
+.joystick-panel{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:10px;padding:8px;width:100%;min-width:0;margin-bottom:0;box-shadow:0 4px 12px rgba(0,0,0,.35);display:flex;flex-direction:column;justify-content:flex-start}
+.joy-screen{background:var(--ui-dark);border:1px solid var(--ui-border);border-radius:8px;padding:7px 8px;margin-bottom:8px;text-align:center;font-family:monospace}
+.screen-mode{font-size:12px;font-weight:bold;letter-spacing:1px;color:var(--ui-muted);text-transform:uppercase}.screen-mode.mode-pas{color:var(--ui-success)}.screen-mode.mode-cruise{color:var(--ui-accent)}.screen-mode.mode-off{color:var(--ui-danger)}
+.screen-val{font-size:23px;font-weight:900;color:var(--ui-text);margin:3px 0}.screen-status{font-size:10px;color:var(--ui-muted);font-weight:bold;text-transform:uppercase}.screen-status.dirty{color:var(--ui-warning);animation:blink 1s infinite}
 @keyframes blink{50%{opacity:0.4}}
 
-.dpad-container{display:grid;grid-template-columns:80px 80px 80px;grid-template-rows:60px 60px 60px;gap:10px;justify-content:center;margin:10px auto}
-.dpad-btn{background:#282828;color:#eee;border:2px solid #444;border-bottom-width:5px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:all .08s}
-.dpad-btn:active{transform:translateY(3px);border-bottom-width:2px;background:#383838}
+.dpad-container{display:grid;grid-template-columns:repeat(3,46px);grid-template-rows:repeat(3,38px);gap:5px;justify-content:center;margin:3px auto 1px}
+.dpad-btn{background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-bottom-width:3px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:900;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:background .08s,transform .08s}
+.dpad-btn:hover{background:var(--ui-hover)}.dpad-btn:active{transform:translateY(2px);border-bottom-width:2px;background:var(--ui-active)}
 .btn-up{grid-column:2;grid-row:1}
 .btn-left{grid-column:1;grid-row:2}
-.btn-ok{grid-column:2;grid-row:2;background:#1b442b;border-color:#2ecc71;border-bottom-color:#1e7e44;color:#2ecc71;font-size:18px}
-.btn-ok:active{background:#235838}
-.btn-ok.dirty-pulse{background:#633e08;border-color:#f39c12;border-bottom-color:#a86708;color:#f39c12;animation:pulse 1s infinite}
+.btn-ok{grid-column:2;grid-row:2;background:var(--ui-card);border-color:var(--ui-success);border-bottom-color:var(--ui-success);color:var(--ui-success);font-size:16px}
+.btn-ok:hover{background:var(--ui-hover)}.btn-ok:active{background:var(--ui-active)}
+.btn-ok.dirty-pulse{background:var(--ui-card);border-color:var(--ui-warning);border-bottom-color:var(--ui-warning);color:var(--ui-warning);animation:pulse 1s infinite}
 @keyframes pulse{50%{box-shadow:0 0 14px rgba(243,156,18,0.7)}}
 .btn-right{grid-column:3;grid-row:2}
 .btn-down{grid-column:2;grid-row:3}
-.joy-legend{display:flex;justify-content:space-around;font-size:11px;color:#777;margin-top:10px;text-align:center}
+.joy-legend{display:none}
 </style>
 </head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 <div class="header">
   <h1>OpenBike Controller</h1>
-  <div class="version">v0.1.6-alpha &bull; 16&times;32 LED Matrix</div>
+  <div class="version">v0.2.0-alpha &bull; 16&times;32 LED Matrix</div>
 </div>
 
 <div class="matrix-card" id="simMatrixCard">
@@ -1338,14 +1396,31 @@ a.card:active{background:#444}
   <div class="sim-matrix-area">
     <canvas id="ledMatrixCanvas" width="320" height="160"></canvas>
   </div>
-  <div class="sim-controls-panel" id="simControlsPanel">
-    <div class="sim-btns-group">
-      <button type="button" class="sim-side-btn" id="btnSimBrake">
-        <span>🛑</span> <span>Тормоз</span>
-      </button>
-      <button type="button" class="sim-side-btn pedal-btn" id="btnSimPedal">
-        <span>🔄</span> <span>Педали</span>
-      </button>
+  <div class="simulator-layout">
+    <div class="sim-left-col">
+      <div class="joystick-panel" id="joystickPanel">
+        <div class="sim-section-title">Джойстик</div>
+        <div class="joy-screen" id="joyScreen">
+          <div class="screen-mode" id="joyMode">PAS</div>
+          <div class="screen-val" id="joyVal">УРОВЕНЬ 1</div>
+          <div class="screen-status" id="joyStatus">ПОДТВЕРЖДЕНО</div>
+        </div>
+        <div class="dpad-container" id="dpadContainer">
+          <button type="button" class="dpad-btn btn-up" id="btnUp" title="Увеличить">&#9650;</button>
+          <button type="button" class="dpad-btn btn-left" id="btnLeft" title="Режим влево">&#9664;</button>
+          <button type="button" class="dpad-btn btn-ok" id="btnOk" title="Применить">OK</button>
+          <button type="button" class="dpad-btn btn-right" id="btnRight" title="Режим вправо">&#9654;</button>
+          <button type="button" class="dpad-btn btn-down" id="btnDown" title="Уменьшить">&#9660;</button>
+        </div>
+      </div>
+      <div class="sim-btns-group" id="simControlsPanel">
+        <button type="button" class="sim-side-btn" id="btnSimBrake">
+          <span class="sim-btn-ico">&#128721;</span><span>Тормоз</span>
+        </button>
+        <button type="button" class="sim-side-btn pedal-btn" id="btnSimPedal">
+          <span class="sim-btn-ico">&#129461;</span><span>Педали</span>
+        </button>
+      </div>
     </div>
     <div class="sim-throttle-group">
       <span class="sim-throttle-label">Газ</span>
@@ -1355,34 +1430,12 @@ a.card:active{background:#444}
   </div>
 </div>
 
-<div class="joystick-panel" id="joystickPanel">
-  <div class="joy-screen" id="joyScreen">
-    <div class="screen-mode" id="joyMode">PAS</div>
-    <div class="screen-val" id="joyVal">УРОВЕНЬ 1</div>
-    <div class="screen-status" id="joyStatus">ПОДТВЕРЖДЕНО</div>
-  </div>
-
-  <div class="dpad-container" id="dpadContainer">
-    <button type="button" class="dpad-btn btn-up" id="btnUp" title="Увеличить">&#9650;</button>
-    <button type="button" class="dpad-btn btn-left" id="btnLeft" title="Режим влево">&#9664;</button>
-    <button type="button" class="dpad-btn btn-ok" id="btnOk" title="Применить">OK</button>
-    <button type="button" class="dpad-btn btn-right" id="btnRight" title="Режим вправо">&#9654;</button>
-    <button type="button" class="dpad-btn btn-down" id="btnDown" title="Уменьшить">&#9660;</button>
-  </div>
-
-  <div class="joy-legend">
-    <span>&#9664; &#9654; Режим (PAS/Круиз)</span>
-    <span>&#9650; &#9660; Уровень</span>
-    <span><b>OK</b> Применить</span>
-  </div>
-</div>
-
-<div class="warn">&#9888; Тормоз продублирован сюда как приоритет 0 (можно отключить в настройках газа).</div>
 <a class="card" href="/settings/throttle">Газ &rarr;</a>
-<a class="card" href="/settings/pas">PAS &rarr;</a>
-<a class="card" href="/settings/cruise">Круиз-контроль &rarr;</a>
-<a class="card" href="/wifi">Связь и сеть (WiFi / AP) &rarr;</a>
-<a class="card" href="/debug">Отладка (график) &rarr;</a>
+<a class="card" href="/settings/pas">Педали (PAS) &rarr;</a>
+<a class="card" href="/settings/cruise">Круиз &rarr;</a>
+<a class="card" href="/wifi">Связь &rarr;</a>
+<div style="color:var(--ui-muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:14px 0 6px">Только для веб-интерфейса</div>
+<a class="card" href="/debug">Отладка &rarr;</a>
 <a class="card" href="/system">Система &rarr;</a>
 )rawliteral" + getTopBarJs() + R"rawliteral(
 <script>
@@ -1404,6 +1457,8 @@ const cfgCruiseAfterThrottle = )rawliteral" + String(cruiseAfterThrottleMode) + 
 let draftMode = (activeMode === "off") ? "pas" : activeMode;
 let draftPasLvl = activePasLvl;
 let draftCruiseLvl = activeCruiseLvl;
+let draftSettingIdx = 0;
+let draftSettingEditing = false;
 let isDirty = false;
 let userInteractingUntil = 0;
 let applyInProgressUntil = 0;
@@ -1518,6 +1573,107 @@ const ARROW_DOWN = [
   [0,0,1,0,0]
 ];
 
+const ICON_GEAR_7X7 = [
+  [0,1,0,1,0,1,0],
+  [1,1,1,1,1,1,1],
+  [0,1,0,0,0,1,0],
+  [1,1,0,0,0,1,1],
+  [0,1,0,0,0,1,0],
+  [1,1,1,1,1,1,1],
+  [0,1,0,1,0,1,0]
+];
+
+const ICON_CHECK_5X5 = [
+  0b00000,
+  0b00001,
+  0b00010,
+  0b10100,
+  0b01000
+];
+
+// 3x5 font bit patterns (columns 0..2)
+const FONT_3X5 = {
+  'A': [0x1E, 0x05, 0x1E],
+  'B': [0x1F, 0x15, 0x0A],
+  'C': [0x0E, 0x11, 0x11],
+  'D': [0x1F, 0x11, 0x0E],
+  'E': [0x1F, 0x15, 0x11],
+  'F': [0x1F, 0x05, 0x01],
+  'G': [0x0E, 0x11, 0x1D],
+  'H': [0x1F, 0x04, 0x1F],
+  'I': [0x11, 0x1F, 0x11],
+  'J': [0x08, 0x10, 0x0F],
+  'K': [0x1F, 0x04, 0x1B],
+  'L': [0x1F, 0x10, 0x10],
+  'M': [0x1F, 0x02, 0x1F],
+  'N': [0x1F, 0x06, 0x1F],
+  'O': [0x0E, 0x11, 0x0E],
+  'P': [0x1F, 0x05, 0x02],
+  'Q': [0x0E, 0x11, 0x1E],
+  'R': [0x1F, 0x05, 0x1A],
+  'S': [0x12, 0x15, 0x09],
+  'T': [0x01, 0x1F, 0x01],
+  'U': [0x0F, 0x10, 0x0F],
+  'V': [0x07, 0x18, 0x07],
+  'W': [0x1F, 0x08, 0x1F],
+  'X': [0x1B, 0x04, 0x1B],
+  'Y': [0x03, 0x1C, 0x03],
+  'Z': [0x19, 0x15, 0x13],
+  '0': [0x1F, 0x11, 0x1F],
+  '1': [0x00, 0x1F, 0x00],
+  '2': [0x1D, 0x15, 0x17],
+  '3': [0x15, 0x15, 0x1F],
+  '4': [0x07, 0x04, 0x1F],
+  '5': [0x17, 0x15, 0x1D],
+  '6': [0x1F, 0x15, 0x1D],
+  '7': [0x01, 0x19, 0x07],
+  '8': [0x1F, 0x15, 0x1F],
+  '9': [0x17, 0x15, 0x1F],
+  '.': [0x00, 0x10, 0x00],
+  ':': [0x00, 0x0A, 0x00],
+  '-': [0x04, 0x04, 0x04],
+  '_': [0x10, 0x10, 0x10],
+  '/': [0x18, 0x06, 0x01],
+  ' ': [0x00, 0x00, 0x00]
+};
+
+function drawChar3x5(ch, sr, sc, clipMinR = 0, clipMaxR = 15, clipMinC = 0, clipMaxC = 31) {
+  const g = FONT_3X5[ch.toUpperCase()] || FONT_3X5[' '];
+  for (let c = 0; c < 3; c++) {
+    const colBits = g[c];
+    for (let r = 0; r < 5; r++) {
+      if ((colBits >> r) & 1) {
+        const tr = sr + r;
+        const tc = sc + c;
+        if (tr >= clipMinR && tr <= clipMaxR && tc >= clipMinC && tc <= clipMaxC) {
+          setMatrixPixel(tr, tc, 1);
+        }
+      }
+    }
+  }
+}
+
+function drawText3x5(str, sr, sc, clipMinR = 0, clipMaxR = 15, clipMinC = 0, clipMaxC = 31) {
+  let currC = sc;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === '.') {
+      drawChar3x5('.', sr, currC, clipMinR, clipMaxR, clipMinC, clipMaxC);
+      currC += 2;
+    } else {
+      drawChar3x5(ch, sr, currC, clipMinR, clipMaxR, clipMinC, clipMaxC);
+      currC += 4;
+    }
+  }
+}
+
+const SETTINGS_MENU = [
+  { id: 'in_min', name: 'THROTTLE IN MIN', unit: 'V', step: 0.05, min: 0.0, max: 4.5, val: cfgThrottleInMin },
+  { id: 'in_max', name: 'THROTTLE IN MAX', unit: 'V', step: 0.05, min: 0.5, max: 5.0, val: cfgThrottleInMax },
+  { id: 'out_min', name: 'THROTTLE OUT MIN', unit: 'V', step: 0.05, min: 0.0, max: 4.5, val: cfgThrottleOutMin },
+  { id: 'out_max', name: 'THROTTLE OUT MAX', unit: 'V', step: 0.05, min: 0.5, max: 5.0, val: cfgThrottleOutMax }
+];
+
 const ICON_BRAKE = [0b11111, 0b10001, 0b10101, 0b10001, 0b11111];
 const ICON_PEDAL_FRAMES = [
   [0b11000, 0b01000, 0b00100, 0b00010, 0b00011],
@@ -1567,6 +1723,13 @@ function drawIcon5x5(b, sr, sc) {
     }
   }
 }
+function drawGear7x7(sr, sc) {
+  for (let r = 0; r < 7; r++) {
+    for (let c = 0; c < 7; c++) {
+      if (ICON_GEAR_7X7[r][c]) setMatrixPixel(sr + r, sc + c, 1);
+    }
+  }
+}
 
 // Elevator animation state
 let animStartLvl = 0;
@@ -1579,95 +1742,160 @@ function updateMatrixDisplay() {
   const now = Date.now();
   const blinkOn = Math.floor(now / 400) % 2 === 0;
 
-  let modeToDraw = draftMode;
-  let lvlToDraw = (modeToDraw === "pas") ? draftPasLvl : ((modeToDraw === "cruise") ? draftCruiseLvl : 0);
-  let maxLvl = (modeToDraw === "pas") ? pasMax : cruiseMax;
+  if (draftMode === "settings") {
+    // Gear icon top-left rows 1..7, cols 1..7
+    drawGear7x7(1, 1);
 
-  if (lvlToDraw !== animTargetLvl) {
-    animStartLvl = animTargetLvl;
-    animTargetLvl = lvlToDraw;
-    animStartTime = now;
-  }
-  let animProgress = 1;
-  if (now - animStartTime < ANIM_DURATION_MS) {
-    let t = (now - animStartTime) / ANIM_DURATION_MS;
-    animProgress = 1 - Math.pow(1 - t, 3);
-  }
-
-  // 1. Draw Big Letter P or C (height 11px, rows 2..12) - blink when draft mode differs from active mode
-  let modeSwitchPending = isDirty && (draftMode !== activeMode);
-  if (!modeSwitchPending || blinkOn) {
-    if (modeToDraw === "pas") {
-      drawBigLetter('P', 2, 1);
-    } else if (modeToDraw === "cruise") {
-      drawBigLetter('C', 2, 1);
+    // Fixed checkmark on the right: rows 10..14, cols 24..28
+    if (!draftSettingEditing) {
+      drawIcon5x5(ICON_CHECK_5X5, 10, 24);
+    } else if (blinkOn) {
+      drawIcon5x5(ICON_CHECK_5X5, 10, 24);
     }
-  }
 
-  // 2. Arrows (Up: row 2..3, Down: row 11..12) with 500ms ±1px bounce
-  let isTwoDigits = (lvlToDraw >= 10);
-  let arrowCol = isTwoDigits ? 13 : 12;
-  let arrowUpVOffset = 0;
-  let arrowDownVOffset = 0;
-  if (now < arrowBounceUntil) {
-    let remaining = arrowBounceUntil - now;
-    let bPhase = Math.sin((500 - remaining) / 500 * Math.PI);
-    if (arrowBounceDir > 0) {
-      arrowUpVOffset = -Math.round(bPhase * 1.2);
-    } else if (arrowBounceDir < 0) {
-      arrowDownVOffset = Math.round(bPhase * 1.2);
-    }
-  }
-
-  if (lvlToDraw < maxLvl) {
-    drawArrow5x2(ARROW_UP, 2 + arrowUpVOffset, arrowCol);
-  }
-  if (lvlToDraw > 0) {
-    drawArrow5x2(ARROW_DOWN, 11 + arrowDownVOffset, arrowCol);
-  }
-
-  // 3. Elevator Animation inside digit window: rows 5..11 (height 7px), strictly clipped
-  let isCruiseWaiting = (modeToDraw === "cruise" && activeCruiseLvl > 0 && !simCruiseEngaged && !isDirty);
-  let showDigits = true;
-  if ((isDirty || isCruiseWaiting) && !blinkOn) showDigits = false;
-
-  if (showDigits) {
-    let fromLvl = animStartLvl;
-    let toLvl = animTargetLvl;
-    let dir = (toLvl >= fromLvl) ? 1 : -1;
-
-    const renderLevelToMatrix = (lvlVal, rowOffset) => {
-      let tD = Math.floor(lvlVal / 10);
-      let oD = lvlVal % 10;
-      let twoD = (lvlVal >= 10);
-      let startC = twoD ? 10 : 12;
-
-      let buf1 = Array.from({length: 7}, () => new Uint8Array(5));
-      let buf2 = Array.from({length: 7}, () => new Uint8Array(5));
-
-      if (twoD) {
-        drawDigit5x7ToBuffer(tD.toString(), buf1);
-        drawDigit5x7ToBuffer(oD.toString(), buf2);
+    // Current setting item
+    const curItem = SETTINGS_MENU[draftSettingIdx];
+    const fullText = curItem.name; // e.g. "THROTTLE IN MIN"
+    const words = fullText.split(' ');
+    let lines = [];
+    let curLine = "";
+    for (let w of words) {
+      if (!curLine) {
+        curLine = w;
+      } else if ((curLine + " " + w).length <= 5) {
+        curLine += " " + w;
       } else {
-        drawDigit5x7ToBuffer(oD.toString(), buf1);
+        lines.push(curLine);
+        curLine = w;
       }
+    }
+    if (curLine) lines.push(curLine);
 
-      for (let r = 0; r < 7; r++) {
-        let targetRow = Math.round(5 + r + rowOffset);
-        if (targetRow >= 5 && targetRow <= 11) {
-          for (let c = 0; c < 5; c++) {
-            if (buf1[r][c]) setMatrixPixel(targetRow, startC + c, 1);
-            if (twoD && buf2[r][c]) setMatrixPixel(targetRow, startC + 6 + c, 1);
+    // Scrolling logic for setting title (clipped in rows 0..9, cols 10..29)
+    // Display window fits 2 lines at height 5 with 1px gap: line 0 at r=0, line 1 at r=5 (0..9)
+    const lineHeight = 5;
+    const lineSpacing = 1;
+    const totalLinePitch = lineHeight + lineSpacing; // 6px
+    const maxScroll = Math.max(0, (lines.length - 2) * totalLinePitch);
+
+    let scrollY = 0;
+    if (maxScroll > 0) {
+      const scrollCycleMs = 3000;
+      const t = (now % scrollCycleMs) / scrollCycleMs;
+      if (t < 0.35) {
+        scrollY = 0;
+      } else if (t < 0.5) {
+        scrollY = ((t - 0.35) / 0.15) * maxScroll;
+      } else if (t < 0.85) {
+        scrollY = maxScroll;
+      } else {
+        scrollY = maxScroll * (1 - (t - 0.85) / 0.15);
+      }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const y = Math.round(i * totalLinePitch - scrollY);
+      if (y + 5 >= 0 && y <= 9) {
+        drawText3x5(lines[i], y, 10, 0, 9, 10, 29);
+      }
+    }
+
+    // Value area at bottom: rows 11..15, cols 2..22
+    const valStr = curItem.val.toFixed(2) + curItem.unit;
+    if (!draftSettingEditing || blinkOn) {
+      drawText3x5(valStr, 11, 2, 10, 15, 0, 23);
+    }
+  } else {
+    let modeToDraw = draftMode;
+    let lvlToDraw = (modeToDraw === "pas") ? draftPasLvl : ((modeToDraw === "cruise") ? draftCruiseLvl : 0);
+    let maxLvl = (modeToDraw === "pas") ? pasMax : cruiseMax;
+
+    if (lvlToDraw !== animTargetLvl) {
+      animStartLvl = animTargetLvl;
+      animTargetLvl = lvlToDraw;
+      animStartTime = now;
+    }
+    let animProgress = 1;
+    if (now - animStartTime < ANIM_DURATION_MS) {
+      let t = (now - animStartTime) / ANIM_DURATION_MS;
+      animProgress = 1 - Math.pow(1 - t, 3);
+    }
+
+    // 1. Draw Big Letter P or C (height 11px, rows 2..12) - blink when draft mode differs from active mode
+    let modeSwitchPending = isDirty && (draftMode !== activeMode);
+    if (!modeSwitchPending || blinkOn) {
+      if (modeToDraw === "pas") {
+        drawBigLetter('P', 2, 1);
+      } else if (modeToDraw === "cruise") {
+        drawBigLetter('C', 2, 1);
+      }
+    }
+
+    // 2. Arrows (Up: row 2..3, Down: row 11..12) with 500ms ±1px bounce
+    let isTwoDigits = (lvlToDraw >= 10);
+    let arrowCol = isTwoDigits ? 13 : 12;
+    let arrowUpVOffset = 0;
+    let arrowDownVOffset = 0;
+    if (now < arrowBounceUntil) {
+      let remaining = arrowBounceUntil - now;
+      let bPhase = Math.sin((500 - remaining) / 500 * Math.PI);
+      if (arrowBounceDir > 0) {
+        arrowUpVOffset = -Math.round(bPhase * 1.2);
+      } else if (arrowBounceDir < 0) {
+        arrowDownVOffset = Math.round(bPhase * 1.2);
+      }
+    }
+
+    if (lvlToDraw < maxLvl) {
+      drawArrow5x2(ARROW_UP, 2 + arrowUpVOffset, arrowCol);
+    }
+    if (lvlToDraw > 0) {
+      drawArrow5x2(ARROW_DOWN, 11 + arrowDownVOffset, arrowCol);
+    }
+
+    // 3. Elevator Animation inside digit window: rows 5..11 (height 7px), strictly clipped
+    let isCruiseWaiting = (modeToDraw === "cruise" && activeCruiseLvl > 0 && !simCruiseEngaged && !isDirty);
+    let showDigits = true;
+    if ((isDirty || isCruiseWaiting) && !blinkOn) showDigits = false;
+
+    if (showDigits) {
+      let fromLvl = animStartLvl;
+      let toLvl = animTargetLvl;
+      let dir = (toLvl >= fromLvl) ? 1 : -1;
+
+      const renderLevelToMatrix = (lvlVal, rowOffset) => {
+        let tD = Math.floor(lvlVal / 10);
+        let oD = lvlVal % 10;
+        let twoD = (lvlVal >= 10);
+        let startC = twoD ? 10 : 12;
+
+        let buf1 = Array.from({length: 7}, () => new Uint8Array(5));
+        let buf2 = Array.from({length: 7}, () => new Uint8Array(5));
+
+        if (twoD) {
+          drawDigit5x7ToBuffer(tD.toString(), buf1);
+          drawDigit5x7ToBuffer(oD.toString(), buf2);
+        } else {
+          drawDigit5x7ToBuffer(oD.toString(), buf1);
+        }
+
+        for (let r = 0; r < 7; r++) {
+          let targetRow = Math.round(5 + r + rowOffset);
+          if (targetRow >= 5 && targetRow <= 11) {
+            for (let c = 0; c < 5; c++) {
+              if (buf1[r][c]) setMatrixPixel(targetRow, startC + c, 1);
+              if (twoD && buf2[r][c]) setMatrixPixel(targetRow, startC + 6 + c, 1);
+            }
           }
         }
-      }
-    };
+      };
 
-    if (animProgress < 1 && fromLvl !== toLvl) {
-      renderLevelToMatrix(Math.round(fromLvl), Math.round(-dir * animProgress * 7));
-      renderLevelToMatrix(Math.round(toLvl), Math.round(dir * (1 - animProgress) * 7));
-    } else {
-      renderLevelToMatrix(lvlToDraw, 0);
+      if (animProgress < 1 && fromLvl !== toLvl) {
+        renderLevelToMatrix(Math.round(fromLvl), Math.round(-dir * animProgress * 7));
+        renderLevelToMatrix(Math.round(toLvl), Math.round(dir * (1 - animProgress) * 7));
+      } else {
+        renderLevelToMatrix(lvlToDraw, 0);
+      }
     }
   }
 
@@ -1743,12 +1971,23 @@ function updateMatrixDisplay() {
 setInterval(updateMatrixDisplay, 40);
 
 // Virtual simulation inputs
-let simGasPct = 0; // This will now reflect the physical throttle's value
+let simGasPct = 0; // Значение виртуальной ручки газа, 0-100%
 let simBrakeActive = false; // Virtual brake button state
 let simPedalActive = false; // Virtual pedal button state
 let simPedalStartMs = 0;
 const sliderGas = document.getElementById("simGas");
 const lblGas = document.getElementById("lblGas");
+
+// Слайдер газа — это именно виртуальный вход симулятора, а не индикатор
+// физической ручки. Телеметрия hardware обновляется отдельно ниже.
+if (sliderGas) {
+  sliderGas.addEventListener("input", (e) => {
+    simGasPct = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+    if (lblGas) lblGas.innerText = simGasPct + "%";
+    userInteractingUntil = Date.now() + 1000;
+    renderJoystick();
+  });
+}
 
 // Real-time data from hardware
 let hwBrakeActive = false;
@@ -1779,14 +2018,10 @@ function refreshHubData(forceSync = false) {
       hwBrakeActive = d.brake || false;
       hwPasActive = d.pas_active || false; // Use 'pas_active' field
 
-      // Update throttle slider and label from physical sensor
-      simGasPct = d.gas_pct || 0;
-      if (sliderGas) {
-        sliderGas.value = simGasPct; // Update slider visually
-      }
-      if (lblGas) {
-        lblGas.innerText = simGasPct + "%";
-      }
+      // Для симулятора мы не перезаписываем слайдер (simGasPct) данными физической
+      // ручки, чтобы виртуальный интерфейс работал независимо (анимация и логика
+      // UI продолжают реагировать на simGasPct).
+      // Hardware-телеметрия только обновляет флаги, не трогая simGasPct.
 
       // Update effective states
       updateEffectiveStates();
@@ -1938,12 +2173,20 @@ function renderJoystick() {
     } else {
       valEl.innerText = "УРОВЕНЬ " + draftCruiseLvl + " / " + cruiseMax;
     }
+  } else if (draftMode === "settings") {
+    const cur = SETTINGS_MENU[draftSettingIdx];
+    modeEl.innerText = "НАСТРОЙКИ: " + cur.name;
+    if (draftSettingEditing) {
+      valEl.innerText = "РЕДАКТИРОВАНИЕ: " + cur.val.toFixed(2) + cur.unit;
+    } else {
+      valEl.innerText = "ЗНАЧЕНИЕ: " + cur.val.toFixed(2) + cur.unit + " (OK - правка)";
+    }
   }
 
   let modified = false;
-  if (activeMode === "off") {
-    // When nothing is active, only the currently selected draft level matters —
-    // switching draftMode alone (PAS <-> Cruise) with level 0 should NOT be dirty.
+  if (draftMode === "settings") {
+    modified = draftSettingEditing;
+  } else if (activeMode === "off") {
     let draftLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
     modified = (draftLvl !== 0);
   } else if (draftMode !== activeMode) {
@@ -1955,7 +2198,17 @@ function renderJoystick() {
   }
 
   isDirty = modified;
-  if (isDirty) {
+  if (draftMode === "settings") {
+    if (draftSettingEditing) {
+      statusEl.innerText = "НАЖМИТЕ OK ДЛЯ СОХРАНЕНИЯ ЗНАЧЕНИЯ";
+      statusEl.className = "screen-status dirty";
+      okBtn.className = "dpad-btn btn-ok dirty-pulse";
+    } else {
+      statusEl.innerText = "UP/DOWN: ПУНКТ, OK: ИЗМЕНИТЬ";
+      statusEl.className = "screen-status";
+      okBtn.className = "dpad-btn btn-ok";
+    }
+  } else if (isDirty) {
     statusEl.innerText = "НАЖМИТЕ OK ДЛЯ ПРИМЕНЕНИЯ";
     statusEl.className = "screen-status dirty";
     okBtn.className = "dpad-btn btn-ok dirty-pulse";
@@ -1967,26 +2220,45 @@ function renderJoystick() {
   }
 }
 
-function toggleMode() {
+function toggleMode(dir = 1) {
   vib();
   userInteractingUntil = Date.now() + 4000;
-  draftMode = (draftMode === "pas") ? "cruise" : "pas";
+  const modes = ["pas", "cruise", "settings"];
+  let curIdx = modes.indexOf(draftMode);
+  if (curIdx === -1) curIdx = 0;
+  if (dir > 0) {
+    curIdx = (curIdx + 1) % modes.length;
+  } else {
+    curIdx = (curIdx - 1 + modes.length) % modes.length;
+  }
+  draftMode = modes[curIdx];
+  draftSettingEditing = false;
   renderJoystick();
 }
 
-document.getElementById("btnLeft").addEventListener("click", toggleMode);
-document.getElementById("btnRight").addEventListener("click", toggleMode);
+document.getElementById("btnLeft").addEventListener("click", () => toggleMode(-1));
+document.getElementById("btnRight").addEventListener("click", () => toggleMode(1));
 
 document.getElementById("btnUp").addEventListener("click", () => {
   vib();
   userInteractingUntil = Date.now() + 4000;
-  let curLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
-  let maxLvl = (draftMode === "pas") ? pasMax : cruiseMax;
-  if (curLvl < maxLvl) {
-    if (draftMode === "pas") draftPasLvl++;
-    else if (draftMode === "cruise") draftCruiseLvl++;
-    arrowBounceUntil = Date.now() + 500;
-    arrowBounceDir = 1;
+  if (draftMode === "settings") {
+    const cur = SETTINGS_MENU[draftSettingIdx];
+    if (draftSettingEditing) {
+      cur.val = Math.min(cur.max, +(cur.val + cur.step).toFixed(2));
+    } else {
+      if (draftSettingIdx > 0) draftSettingIdx--;
+      else draftSettingIdx = SETTINGS_MENU.length - 1;
+    }
+  } else {
+    let curLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
+    let maxLvl = (draftMode === "pas") ? pasMax : cruiseMax;
+    if (curLvl < maxLvl) {
+      if (draftMode === "pas") draftPasLvl++;
+      else if (draftMode === "cruise") draftCruiseLvl++;
+      arrowBounceUntil = Date.now() + 500;
+      arrowBounceDir = 1;
+    }
   }
   renderJoystick();
 });
@@ -1994,12 +2266,22 @@ document.getElementById("btnUp").addEventListener("click", () => {
 document.getElementById("btnDown").addEventListener("click", () => {
   vib();
   userInteractingUntil = Date.now() + 4000;
-  let curLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
-  if (curLvl > 0) {
-    if (draftMode === "pas") draftPasLvl--;
-    else if (draftMode === "cruise") draftCruiseLvl--;
-    arrowBounceUntil = Date.now() + 500;
-    arrowBounceDir = -1;
+  if (draftMode === "settings") {
+    const cur = SETTINGS_MENU[draftSettingIdx];
+    if (draftSettingEditing) {
+      cur.val = Math.max(cur.min, +(cur.val - cur.step).toFixed(2));
+    } else {
+      if (draftSettingIdx < SETTINGS_MENU.length - 1) draftSettingIdx++;
+      else draftSettingIdx = 0;
+    }
+  } else {
+    let curLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
+    if (curLvl > 0) {
+      if (draftMode === "pas") draftPasLvl--;
+      else if (draftMode === "cruise") draftCruiseLvl--;
+      arrowBounceUntil = Date.now() + 500;
+      arrowBounceDir = -1;
+    }
   }
   renderJoystick();
 });
@@ -2007,6 +2289,11 @@ document.getElementById("btnDown").addEventListener("click", () => {
 document.getElementById("btnOk").addEventListener("click", () => {
   vib();
   if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+  if (draftMode === "settings") {
+    draftSettingEditing = !draftSettingEditing;
+    renderJoystick();
+    return;
+  }
   let targetMode = draftMode;
   let targetLvl = (draftMode === "pas") ? draftPasLvl : draftCruiseLvl;
 
@@ -2198,25 +2485,18 @@ void handleThrottlePage() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Газ</title>
 <style>
-)rawliteral" + getTopBarCss() + R"rawliteral(
-body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#111;color:#eee}
-label{display:block;margin-top:12px}input{width:100%;padding:6px;box-sizing:border-box;background:#222;color:#eee;border:1px solid #444}
-button{margin-top:15px;padding:10px;width:100%;font-size:16px}
-.cal-btn{background:#2c3e50;color:#fff;border:1px solid #34495e;padding:8px;margin-top:4px}
-.chk{display:flex;gap:8px;align-items:center;margin-top:12px}.chk input{width:auto}
-fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
-.warn{color:#ff8888;font-size:13px;margin-top:6px}
-#liveV{font-size:18px;font-weight:bold;color:#2ecc71;margin-bottom:10px;display:inline-block;padding:4px 8px;background:#222;border-radius:4px;border:1px solid #444}
+)rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
+#liveV{font-size:18px;font-weight:bold;color:var(--ui-text);margin-bottom:10px;display:inline-block;padding:4px 8px;background:var(--ui-card);border-radius:4px;border:1px solid var(--ui-border)}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
-<p><a href="/" style="color:#4a90d9">&larr; Настройки</a></p>
+<p><a href="/" style="color:var(--ui-accent)">&larr; Настройки</a></p>
 <h1>Газ</h1>
 <form id="f">
 <fieldset><legend>Калибровка (в реальных вольтах на проводах)</legend>
-<p style="color:#888;font-size:13px">Это напряжение на самих проводах (ручка газа / вход контроллера), не на ножках ESP32 — делитель и усилитель уже всё пересчитывают сами.</p>
+<p style="color:var(--ui-muted);font-size:13px">Это напряжение на самих проводах (ручка газа / вход контроллера), не на ножках ESP32 — делитель и усилитель уже всё пересчитывают сами.</p>
 <div>Текущее напряжение ручки газа: <span id="liveV">-- В</span></div>
-<p style="color:#888;font-size:13px;margin-top:0;">* В будущем планируется добавить автокалибровку выходного порога старта по датчику скорости (чтобы определять реальный вольтаж трогания велосипеда).</p>
+<p style="color:var(--ui-muted);font-size:13px;margin-top:0;">* В будущем планируется добавить автокалибровку выходного порога старта по датчику скорости (чтобы определять реальный вольтаж трогания велосипеда).</p>
 
 <label>Вход мин, В (ручка газа в покое)</label>
 <input type="number" step="0.01" min="0" max="5" id="inMinV" name="inMinV" value=")rawliteral"; html += String(throttleInMinV, 2);
@@ -2236,27 +2516,23 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
 <fieldset><legend>Согласующие цепи (подстроить под фактические резисторы)</legend>
 <label>Коэффициент делителя на входе (R2/(R1+R2))</label><input type="number" step="0.001" min="0.1" max="1" name="divRatio" value=")rawliteral"; html += String(throttleInputDividerRatio, 3);
   html += R"rawliteral(">
-<p style="color:#888;font-size:13px">По умолчанию для R1=10к, R2=24к: 24/(10+24) &#8776; 0.706</p>
+<p style="color:var(--ui-muted);font-size:13px">По умолчанию для R1=10к, R2=24к: 24/(10+24) &#8776; 0.706</p>
 <label>Коэффициент усиления ОУ (1 + R4/R3)</label><input type="number" step="0.01" min="1" max="3" name="gain" value=")rawliteral"; html += String(throttleOutputGain, 2);
   html += R"rawliteral(">
-<p style="color:#888;font-size:13px">По умолчанию для R3=10к, R4=2.7к: 1 + 2.7/10 = 1.27 (ОУ MCP6002, питание +5В).</p>
+<p style="color:var(--ui-muted);font-size:13px">По умолчанию для R3=10к, R4=2.7к: 1 + 2.7/10 = 1.27 (ОУ MCP6002, питание +5В).</p>
 <p class="warn">Выше 3.3В на самом ЦАП ESP32 не поднимется — это аппаратный предел чипа. ОУ после ЦАП компенсирует это усилением, но выше напряжения питания ОУ (обычно 5В) выход тоже не поднимется физически.</p>
 </fieldset>
-<fieldset><legend>Мягкий старт/стоп</legend>
+<fieldset><legend>Мягкий старт</legend>
 <div class="chk"><input type="checkbox" name="ssEn" )rawliteral"; html += throttleSoftStartEnabled?"checked":"";
   html += R"rawliteral(><label>Мягкий старт</label></div>
 <label>Время разгона (мс)</label><input type="number" name="ssMs" value=")rawliteral"; html += String(throttleSoftStartMs);
   html += R"rawliteral(">
-<div class="chk"><input type="checkbox" name="spEn" )rawliteral"; html += throttleSoftStopEnabled?"checked":"";
-  html += R"rawliteral(><label>Мягкий стоп</label></div>
-<label>Время торможения (мс)</label><input type="number" name="spMs" value=")rawliteral"; html += String(throttleSoftStopMs);
+<input type="hidden" name="spEn" value=")rawliteral"; html += throttleSoftStopEnabled ? "1" : "0";
+  html += R"rawliteral(">
+<input type="hidden" name="spMs" value=")rawliteral"; html += String(throttleSoftStopMs);
   html += R"rawliteral(">
 </fieldset>
-<fieldset><legend>Безопасность</legend>
-<div class="chk"><input type="checkbox" name="brakeCut" )rawliteral"; html += ownBrakeCutoffEnabled?"checked":"";
-  html += R"rawliteral(><label>Дублировать отключение газа по тормозу (доп. к моторконтроллеру)</label></div>
-</fieldset>
-<button type="submit" style="background:#27ae60;color:#fff;border:none;font-weight:bold">Сохранить</button>
+<button type="submit">Сохранить</button>
 </form>
 <script>
 document.getElementById('f').addEventListener('submit',function(e){
@@ -2325,10 +2601,10 @@ void handleThrottleSave() {
   float newGain = server.arg("gain").toFloat();
   if (newGain >= 1.0f) throttleOutputGain = newGain;
   throttleSoftStartEnabled = server.hasArg("ssEn");
-  throttleSoftStopEnabled = server.hasArg("spEn");
+  throttleSoftStopEnabled = server.arg("spEn").toInt() != 0; // скрытое поле: значение сохраняем, UI скрыт
   throttleSoftStartMs = server.arg("ssMs").toInt();
   throttleSoftStopMs = server.arg("spMs").toInt();
-  ownBrakeCutoffEnabled = server.hasArg("brakeCut");
+  ownBrakeCutoffEnabled = true; // дублирование тормоза всегда включено (опция скрыта в UI)
   throttleSettingsSave();
   server.send(200, "text/plain", "OK");
 }
@@ -2340,16 +2616,11 @@ void handlePasPage() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PAS</title>
 <style>
-)rawliteral" + getTopBarCss() + R"rawliteral(
-body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#111;color:#eee}
-label{display:block;margin-top:12px}input,select{width:100%;padding:6px;box-sizing:border-box;background:#222;color:#eee;border:1px solid #444}
-button{margin-top:15px;padding:10px;width:100%;font-size:16px}
-.chk{display:flex;gap:8px;align-items:center;margin-top:12px}.chk input{width:auto}
-fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
+)rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
 </style></head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
-<p><a href="/" style="color:#4a90d9">&larr; Настройки</a></p>
+<p><a href="/" style="color:var(--ui-accent)">&larr; Настройки</a></p>
 <h1>PAS</h1>
 <form id="f">
 <fieldset><legend>Ассистент PAS</legend>
@@ -2383,11 +2654,11 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
   html += R"rawliteral(">
 <label>Тайм-аут отключения при остановке педалей (мс)</label><input type="number" name="stopTO" value=")rawliteral"; html += String(pasStopTimeoutMs);
   html += R"rawliteral(">
-<p style="color:#888;font-size:13px">Первый — как долго счётчик импульсов «помнит» вращение (медленное педалирование не сбрасывает). Второй — как быстро тяга отключается, когда педали остановились.</p>
+<p style="color:var(--ui-muted);font-size:13px">Первый — как долго счётчик импульсов «помнит» вращение (медленное педалирование не сбрасывает). Второй — как быстро тяга отключается, когда педали остановились.</p>
 </fieldset>
 
 <fieldset><legend>Калибровка магнитов</legend>
-<p style="color:#888;font-size:13px">Нажми «Старт», проверни педали ровно на 2 полных оборота, затем нажми «Готово» (или подожди 3 с после остановки — калибровка завершится сама). Количество магнитов будет посчитано и сохранено.</p>
+<p style="color:var(--ui-muted);font-size:13px">Нажми «Старт», проверни педали ровно на 2 полных оборота, затем нажми «Готово» (или подожди 3 с после остановки — калибровка завершится сама). Количество магнитов будет посчитано и сохранено.</p>
 <button type="button" onclick="calStart()">Старт</button>
 <button type="button" onclick="calStop()">Готово</button>
 <div id="calStat" style="margin-top:8px;font-weight:bold">—</div>
@@ -2401,35 +2672,29 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
 <button type="button" onclick="autoDistribute()">Автораспределение</button>
 </fieldset>
 
-<fieldset><legend>Мягкий старт/стоп ассиста</legend>
+<fieldset><legend>Мягкий старт ассиста</legend>
 <div class="chk"><input type="checkbox" name="ssEn" )rawliteral"; html += pasSoftStartEnabled?"checked":"";
   html += R"rawliteral(><label>Мягкий старт</label></div>
 <label>Время разгона (мс)</label><input type="number" name="ssMs" value=")rawliteral"; html += String(pasSoftStartMs);
   html += R"rawliteral(">
-<div class="chk"><input type="checkbox" name="spEn" )rawliteral"; html += pasSoftStopEnabled?"checked":"";
-  html += R"rawliteral(><label>Мягкий стоп</label></div>
-<label>Время затухания при остановке педалей (мс)</label><input type="number" name="spMs" value=")rawliteral"; html += String(pasSoftStopMs);
+<input type="hidden" name="spEn" value=")rawliteral"; html += pasSoftStopEnabled ? "1" : "0";
+  html += R"rawliteral(">
+<input type="hidden" name="spMs" value=")rawliteral"; html += String(pasSoftStopMs);
   html += R"rawliteral(">
 </fieldset>
 
 <button type="submit">Сохранить</button>
 </form>
-<script>
+)rawliteral" + getSettingsJs() + R"rawliteral(<script>
 const saved = [)rawliteral";
   for (int i = 0; i < PAS_MAX_LEVELS; i++) { html += String(pasLevelPercent[i]); if (i<PAS_MAX_LEVELS-1) html += ","; }
   html += R"rawliteral(];
 function renderLevels(){
-  const count = parseInt(document.getElementById('count').value)||0;
-  const div = document.getElementById('levels'); div.innerHTML='';
-  for(let i=0;i<count;i++){
-    const val = saved[i]!==undefined?saved[i]:0;
-    div.innerHTML += '<label>Уровень '+(i+1)+' — усилие (%)</label><input type="number" name="lvl'+i+'" value="'+val+'">';
-  }
+  renderLevelFields('levels','lvl',saved,document.getElementById('count').value,'Уровень — усилие (%)',100);
 }
 function autoDistribute(){
-  const count = parseInt(document.getElementById('count').value)||0;
-  for(let i=0;i<count;i++) saved[i]=Math.round((i+1)*100/count);
-  renderLevels();
+  const count=parseInt(document.getElementById('count').value)||0;
+  distributeLevels(saved,count); renderLevels();
 }
 renderLevels();
 document.getElementById('f').addEventListener('submit',function(e){
@@ -2500,7 +2765,7 @@ void handlePasSave() {
   }
 
   pasSoftStartEnabled = server.hasArg("ssEn");
-  pasSoftStopEnabled = server.hasArg("spEn");
+  pasSoftStopEnabled = server.arg("spEn").toInt() != 0; // скрытое поле: значение сохраняем, UI скрыт
   pasSoftStartMs = server.arg("ssMs").toInt();
   pasSoftStopMs = server.arg("spMs").toInt();
   pasEnabled = server.hasArg("en");
@@ -2566,14 +2831,14 @@ void handleUpdatePage() {
 <title>Обновление прошивки</title>
 <style>
 )rawliteral" + getTopBarCss() + R"rawliteral(
-body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#111;color:#eee}
+body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:var(--ui-bg);color:var(--ui-text)}
 button{margin-top:15px;padding:10px;width:100%;font-size:16px}</style>
 </head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
-<p><a href="/" style="color:#4a90d9">&larr; Настройки</a></p>
+<p><a href="/" style="color:var(--ui-accent)">&larr; Настройки</a></p>
 <h1>Загрузить прошивку (.bin)</h1>
-<p style="color:#888;font-size:13px">В Arduino IDE: Sketch &rarr; Export Compiled Binary — появится .bin рядом со скетчем. Выбери его тут и жми "Залить". Займёт секунд 20-30, плата сама перезагрузится.</p>
+<p style="color:var(--ui-muted);font-size:13px">В Arduino IDE: Sketch &rarr; Export Compiled Binary — появится .bin рядом со скетчем. Выбери его тут и жми "Залить". Займёт секунд 20-30, плата сама перезагрузится.</p>
 <form method="POST" action="/update" enctype="multipart/form-data">
 <input type="file" name="update" accept=".bin">
 <button type="submit">Залить</button>
@@ -2704,7 +2969,7 @@ void setup() {
       Serial.printf("NVS Init Error: 0x%x (%s)\n", err, esp_err_to_name(err));
   }
   Serial.begin(115200);
-  Serial.println(F("--- OpenBike Controller v0.1.6-alpha ---"));
+  Serial.println(F("--- OpenBike Controller v0.2.0-alpha ---"));
 
   pinMode(BRAKE_PIN, INPUT_PULLUP);
   pinMode(PAS_SENSOR_PIN, INPUT_PULLUP);
@@ -2826,15 +3091,28 @@ void criticalControlTask(void *pvParameters) {
     unsigned long startMicros = micros();
 
     // 1. Наивысший приоритет: Тормоз, Газ, PAS
+    unsigned long secStart = micros();
     updatePasDetection();
+    cpuUsPas += micros() - secStart;
+
+    secStart = micros();
     updatePasButton();
+    cpuUsPasBtn += micros() - secStart;
+
+    secStart = micros();
     updateThrottle();
+    cpuUsThrottle += micros() - secStart;
 
     // 2. Вспомогательное управление освещением и звуком
+    secStart = micros();
     updateLightButtons();
+    cpuUsLight += micros() - secStart;
+
+    secStart = micros();
     updateTurnSignals();
     updateHorn();
     updateBuzzer();
+    cpuUsSound += micros() - secStart;
 
     unsigned long elapsed = micros() - startMicros;
     cpuBusyTimeMicros += elapsed;
@@ -2843,8 +3121,14 @@ void criticalControlTask(void *pvParameters) {
       unsigned long totalElapsedMs = millis() - cpuMeasureStartMs;
       if (totalElapsedMs > 0) {
         cpuUsagePercent = (int)constrain((cpuBusyTimeMicros * 100ULL) / (totalElapsedMs * 1000ULL), 0ULL, 100ULL);
+        cpuPasPct = (int)constrain((cpuUsPas * 100ULL) / (totalElapsedMs * 1000ULL), 0ULL, 100ULL);
+        cpuPasBtnPct = (int)constrain((cpuUsPasBtn * 100ULL) / (totalElapsedMs * 1000ULL), 0ULL, 100ULL);
+        cpuThrottlePct = (int)constrain((cpuUsThrottle * 100ULL) / (totalElapsedMs * 1000ULL), 0ULL, 100ULL);
+        cpuLightPct = (int)constrain((cpuUsLight * 100ULL) / (totalElapsedMs * 1000ULL), 0ULL, 100ULL);
+        cpuSoundPct = (int)constrain((cpuUsSound * 100ULL) / (totalElapsedMs * 1000ULL), 0ULL, 100ULL);
       }
       cpuBusyTimeMicros = 0;
+      cpuUsPas = 0; cpuUsPasBtn = 0; cpuUsThrottle = 0; cpuUsLight = 0; cpuUsSound = 0;
       cpuMeasureStartMs = millis();
     }
 
@@ -2916,21 +3200,13 @@ void handleCruisePage() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cruise Control</title>
 <style>
-)rawliteral" + getTopBarCss() + R"rawliteral(
-
-body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#111;color:#eee}
-label{display:block;margin-top:12px}
-input,select{width:100%;padding:6px;box-sizing:border-box;background:#222;color:#eee;border:1px solid #444}
-button{margin-top:15px;padding:10px;width:100%;font-size:16px}
-.chk{display:flex;gap:8px;align-items:center;margin-top:12px}
-.chk input{width:auto}
-fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
+)rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
 .flex-row{display:flex;gap:10px}
 .flex-row > div{flex:1}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
-<p><a href="/" style="color:#4a90d9">&larr; Главный экран</a></p>
+<p><a href="/" style="color:var(--ui-accent)">&larr; Главный экран</a></p>
 <h1>Cruise Control</h1>
 <form id="f">
 <fieldset><legend>Настройки ступеней Cruise Control</legend>
@@ -2954,20 +3230,20 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
   </div>
 </div>
 
-<button type="button" onclick="autoDistribute()" style="background:#2c3e50;color:#fff;border:1px solid #34495e">Автораспределение (интерполяция)</button>
+<button type="button" onclick="autoDistribute()" style="background:var(--ui-accent);color:var(--ui-text);border:1px solid var(--ui-border)">Автораспределение (интерполяция)</button>
 <div id="levels"></div>
 </fieldset>
-<fieldset><legend>Мягкий старт/стоп</legend>
+<fieldset><legend>Мягкий старт</legend>
 <div class="chk"><input type="checkbox" name="ssEn" )rawliteral";
   html += cruiseSoftStartEnabled ? "checked" : "";
   html += R"rawliteral(><label>Мягкий старт</label></div>
 <label>Время разгона (мс)</label><input type="number" name="ssMs" value=")rawliteral";
   html += String(cruiseSoftStartMs);
   html += R"rawliteral(">
-<div class="chk"><input type="checkbox" name="spEn" )rawliteral";
-  html += cruiseSoftStopEnabled ? "checked" : "";
-  html += R"rawliteral(><label>Мягкий стоп</label></div>
-<label>Время торможения (мс)</label><input type="number" name="spMs" value=")rawliteral";
+<input type="hidden" name="spEn" value=")rawliteral";
+  html += cruiseSoftStopEnabled ? "1" : "0";
+  html += R"rawliteral(">
+<input type="hidden" name="spMs" value=")rawliteral";
   html += String(cruiseSoftStopMs);
   html += R"rawliteral(">
 </fieldset>
@@ -2988,9 +3264,9 @@ fieldset{border:1px solid #333;border-radius:8px;margin-top:15px;padding:10px}
   <option value="2")rawliteral"; html += (cruiseAfterThrottleMode == 2 ? " selected" : ""); html += R"rawliteral(>Восстанавливать к предыдущему значению (ИСПОЛЬЗОВАТЬ С КРАЙНЕЙ ОСТОРОЖНОСТЬЮ!!!)</option>
 </select>
 </fieldset>
-<button type="submit" style="background:#27ae60;color:#fff;border:none;font-weight:bold">Сохранить</button>
+<button type="submit">Сохранить</button>
 </form>
-<script>
+)rawliteral" + getSettingsJs() + R"rawliteral(<script>
 const saved = [)rawliteral";
   for (int i = 0; i < CRUISE_MAX_LEVELS; i++) {
     html += String(cruiseLevelPercent[i]);
@@ -2998,27 +3274,14 @@ const saved = [)rawliteral";
   }
   html += R"rawliteral(];
 function renderLevels(){
-  const count = parseInt(document.getElementById('count').value)||0;
-  const div = document.getElementById('levels'); div.innerHTML='';
-  for(let i=0;i<count;i++){
-    const val = saved[i]!==undefined?saved[i]:0;
-    div.innerHTML += '<label>Уровень '+(i+1)+' — цель (%)</label><input type="number" step="0.1" min="0" max="100" class="lvl-input" data-idx="'+i+'" value="'+val+'" onchange="saved['+i+']=parseFloat(this.value)||0">';
-  }
+  renderLevelFields('levels','lvl',saved,document.getElementById('count').value,'Уровень — цель (%)',100);
+  document.querySelectorAll('.levels input').forEach((input,i)=>input.step='0.1');
 }
 function autoDistribute(){
-  const count = parseInt(document.getElementById('count').value)||0;
-  const st = parseFloat(document.getElementById('stPct').value)||0;
-  const end = parseFloat(document.getElementById('endPct').value)||100;
-  if(count <= 0) return;
-  if(count === 1){
-    saved[0] = Math.round(end * 10) / 10;
-  } else {
-    for(let i=0; i<count; i++){
-      const frac = i / (count - 1);
-      saved[i] = Math.round((st + frac * (end - st)) * 10) / 10;
-    }
-  }
-  renderLevels();
+  const count=parseInt(document.getElementById('count').value)||0;
+  const st=parseFloat(document.getElementById('stPct').value)||0;
+  const end=parseFloat(document.getElementById('endPct').value)||100;
+  distributeLevels(saved,count,st,end); renderLevels();
 }
 renderLevels();
 document.getElementById('f').addEventListener('submit',function(e){
@@ -3082,7 +3345,7 @@ void handleCruiseSave() {
   }
 
   cruiseSoftStartEnabled = server.hasArg("ssEn");
-  cruiseSoftStopEnabled = server.hasArg("spEn");
+  cruiseSoftStopEnabled = server.arg("spEn").toInt() != 0; // скрытое поле: значение сохраняем, UI скрыт
   cruiseSoftStartMs = server.arg("ssMs").toInt();
   cruiseSoftStopMs = server.arg("spMs").toInt();
   cruiseConfirmThrottleAfterStart = server.hasArg("confThr");
@@ -3099,19 +3362,15 @@ void handleSystemPage() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Система</title>
 <style>
-)rawliteral" + getTopBarCss() + R"rawliteral(
-body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto;background:#111;color:#eee}
-a.card, label.card{display:block;background:#333;color:#fff;padding:15px;border-radius:8px;margin-bottom:10px;text-decoration:none;box-sizing:border-box;text-align:center;cursor:pointer}
-a.card:hover, label.card:hover{background:#444}
-.warn{background:#5c1a1a;padding:12px;border-radius:8px;margin-bottom:20px;font-weight:bold;font-size:14px}
-a.back{color:#4a90d9;text-decoration:none;display:inline-block;margin-top:20px;}
+)rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
+a.back{color:var(--ui-accent);text-decoration:none;display:inline-block;margin-top:20px}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
 <p><a class="back" href="/">&larr; Меню</a></p>
 <h1>Система</h1>
-<div style="background:#222;border:1px solid #333;border-radius:8px;padding:12px;margin-bottom:15px">
-  <div style="font-weight:bold;margin-bottom:8px;color:#4a90d9">Интерфейс и элементы управления</div>
+<div style="background:var(--ui-card);border:1px solid var(--ui-border);border-radius:8px;padding:12px;margin-bottom:15px">
+  <div style="font-weight:bold;margin-bottom:8px;color:var(--ui-accent)">Интерфейс и элементы управления</div>
   <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px">
     <input type="checkbox" id="chkShowTopbar" onchange="toggleTopbar(this.checked)" style="width:auto;cursor:pointer">
     <span>Верхняя панель статуса (Top Bar)</span>
@@ -3321,7 +3580,7 @@ void handleSettingsImport() {
       int bcIdx = throttleJson.indexOf('{', brakeCutPos) + 1;
       int bcEnd = throttleJson.indexOf('}', bcIdx);
       if (bcEnd != -1) {
-        ownBrakeCutoffEnabled = throttleJson.substring(bcIdx, bcEnd).toInt() != 0;
+  ownBrakeCutoffEnabled = true; // импорт не может отключить обязательное отключение по тормозу
       }
     }
     throttleSettingsSave();
