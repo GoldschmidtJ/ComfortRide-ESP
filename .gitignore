@@ -1,19 +1,15 @@
-# Arduino / ESP32 build artifacts
-*.o
-*.a
-*.elf
-*.hex
-*.bin
-*.map
-*.lss
-*.sym
-*.bak
-*.orig
-*.swp
-*~
-build/
-debug/
-*.log
+# Python
+__pycache__/
+*.pyc
+
+# VS Code Local History / extension artifacts
+.history/
+
+# clangd / IDE
+compile_commands.json
+
+# Generated previews
+preview_animation.html
 
 # PlatformIO
 .pio
