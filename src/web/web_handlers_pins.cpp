@@ -38,6 +38,7 @@ extern String validatePinConfig(PinConfig &cfg, String *warnings);
 extern String getTopBarCss();
 extern String getSettingsCss();
 extern String getTopBarHtml();
+extern String getBackMenuHtml();
 extern String getTopBarJs();
 extern String htmlEscape(const String &value);
 
@@ -106,19 +107,19 @@ void handlePinsPage() {
 <style>
 )rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
 body{max-width:560px}
-.pin-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(118px,170px);align-items:start;gap:6px 10px;background:var(--ui-card);border:1px solid var(--ui-border);border-radius:8px;padding:8px 10px;margin-bottom:6px;box-sizing:border-box}.pin-main,.pin-side{min-width:0}.pin-name{display:block;box-sizing:border-box;width:100%;min-width:0;margin:0;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;padding:6px;font-size:14px}.pin-row select{box-sizing:border-box;width:100%;min-width:0;margin:0;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;padding:6px;font-size:13px}.pin-side{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px}.custom-row .pin-side{grid-template-columns:minmax(0,1fr) auto auto}.pin-meta{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(118px,170px);gap:10px;color:var(--ui-muted);font-size:11px;line-height:1.25}.pin-cap{text-align:right}.custom-mode{grid-column:1/-1;display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:1px}.custom-mode label{font-size:10px;color:var(--ui-muted)}.custom-mode .pin-mode{width:min(170px,55%)}.row-save,.row-del{display:none!important;width:44px!important;min-width:44px;margin:0!important;padding:6px!important}.pin-row.dirty .row-save{display:block!important}.custom-row .row-del{display:block!important}.row-msg{grid-column:1/-1;min-height:0;font-size:12px;white-space:pre-line}.row-msg.msg-ok{color:var(--ui-success)}.row-msg.msg-err{color:var(--ui-danger)}.add-pin{border-style:dashed;color:var(--ui-accent)}
-@media(max-width:420px){body{padding-left:12px;padding-right:12px}.top-bar-sticky{margin-left:-12px;margin-right:-12px}.pin-row{grid-template-columns:minmax(0,1fr) minmax(105px,38%);gap:5px 7px;padding:7px}.pin-name,.pin-row select{font-size:14px;padding:6px}.pin-meta{grid-template-columns:minmax(0,1fr) minmax(105px,38%);gap:7px;font-size:11px}.custom-mode .pin-mode{width:min(150px,60%)}}
+.pin-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(118px,170px);align-items:start;gap:6px 10px;background:var(--ui-card);border:1px solid var(--ui-border);border-radius:8px;padding:8px 10px;margin-bottom:6px;box-sizing:border-box}.pin-main,.pin-side{min-width:0}.pin-name{display:block;box-sizing:border-box;width:100%;min-width:0;margin:0;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;padding:6px;font-size:var(--ui-fs-mid)}.pin-row select{box-sizing:border-box;width:100%;min-width:0;margin:0;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;padding:6px;font-size:var(--ui-fs-small)}.pin-side{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px}.custom-row .pin-side{grid-template-columns:minmax(0,1fr) auto auto}.pin-meta{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(118px,170px);gap:10px;color:var(--ui-muted);font-size:11px;line-height:1.25}.pin-cap{text-align:right}.custom-mode{grid-column:1/-1;display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:1px}.custom-mode label{font-size:10px;color:var(--ui-muted)}.custom-mode .pin-mode{width:min(170px,55%)}.row-save,.row-del{display:none!important;width:44px!important;min-width:44px;margin:0!important;padding:6px!important}.pin-row.dirty .row-save{display:block!important}.custom-row .row-del{display:block!important}.row-msg{grid-column:1/-1;min-height:0;font-size:var(--ui-fs-tiny);white-space:pre-line}.row-msg.msg-ok{color:var(--ui-success)}.row-msg.msg-err{color:var(--ui-danger)}.add-pin{border-style:dashed;color:var(--ui-accent)}
+@media(max-width:420px){body{padding-left:12px;padding-right:12px}.top-bar-sticky{margin-left:-12px;margin-right:-12px}.pin-row{grid-template-columns:minmax(0,1fr) minmax(105px,38%);gap:5px 7px;padding:7px}.pin-name,.pin-row select{font-size:var(--ui-fs-mid);padding:6px}.pin-meta{grid-template-columns:minmax(0,1fr) minmax(105px,38%);gap:7px;font-size:11px}.custom-mode .pin-mode{width:min(150px,60%)}}
 button{margin-top:10px}
-.msg{padding:10px;border-radius:8px;margin:10px 0;font-size:13px;white-space:pre-line}
+.msg{padding:10px;border-radius:8px;margin:10px 0;font-size:var(--ui-fs-small);white-space:pre-line}
 .msg-err{border:1px solid var(--ui-danger);color:var(--ui-danger)}
 .msg-warn{border:1px solid var(--ui-warning);color:var(--ui-warning)}
 .msg-ok{border:1px solid var(--ui-success);color:var(--ui-success)}
-.free{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:8px;padding:10px;margin:10px 0;font-size:13px;color:var(--ui-muted)}
+.free{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:8px;padding:10px;margin:10px 0;font-size:var(--ui-fs-small);color:var(--ui-muted)}
 h2{font-size:15px;margin:16px 0 8px}.pin-title{font-size:20px}.pin-badges{color:var(--ui-muted);font-size:11px}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
-<p><a class="back-link" href="/">&larr; Меню</a></p>
+<p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>
 <h1 class="pin-title">GPIO</h1>
 <p class="hint">Назначение пинов сохраняется в NVS и применяется после перезагрузки.
 )rawliteral" + String(pinConfigCustom ? "Сейчас действует <b>пользовательская</b> конфигурация." : "Сейчас действует <b>заводская</b> конфигурация.") + R"rawliteral(</p>

@@ -32,6 +32,126 @@ extern int readPercentArray(const String &src, int *dst, int maxCount);
 extern String jsonStringAfter(const String &src, const char *key, bool &ok);
 extern bool validApCredentials(const String &ssidValue, const String &passValue, String &error);
 
+// ================= Импорт / экспорт файла настроек =================
+
+// Буфер multipart-загрузки JSON-файла настроек: WebServer отдаёт chunks в
+// handleSettingsUpload(), а разбирает их уже handleSettingsImport().
+static String gSettingsUpload;
+static bool gSettingsUploadTooBig = false;
+
+// Позиция закрывающего символа, парного к openPos, с учётом вложенности,
+// строк и escape-последовательностей. -1, если блок не закрыт.
+static int jsonBlockEnd(const String &src, int openPos, char openCh, char closeCh) {
+  int depth = 0;
+  bool inString = false;
+  bool escaped = false;
+  for (int i = openPos; i < (int)src.length(); i++) {
+    char c = src.charAt(i);
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c == '\\') escaped = true;
+      else if (c == '"') inString = false;
+      continue;
+    }
+    if (c == '"') inString = true;
+    else if (c == openCh) depth++;
+    else if (c == closeCh && --depth <= 0) return i;
+  }
+  return -1;
+}
+
+// Следующий объект {...} внутри JSON-массива (ограничен arrayEnd). pos — текущая
+// позиция сканирования; сдвигается за найденный объект. false — объектов больше нет.
+static bool nextJsonArrayObject(const String &src, int &pos, int arrayEnd, String &item) {
+  int open = src.indexOf('{', pos);
+  if (open == -1 || open > arrayEnd) return false;
+  int close = jsonBlockEnd(src, open, '{', '}');
+  if (close == -1 || close > arrayEnd) return false;
+  item = src.substring(open, close + 1);
+  pos = close + 1;
+  return true;
+}
+
+// Следующая строка JSON-массива («...») в пределах arrayEnd; pos сдвигается за неё.
+// Распаковывает \" и \\ — иначе имя пина с кавычкой рассинхронизировало бы весь массив.
+static bool nextJsonArrayString(const String &src, int &pos, int arrayEnd, String &out) {
+  int q = src.indexOf('"', pos);
+  if (q == -1 || q > arrayEnd) return false;
+  out = "";
+  pos = q + 1;
+  while (pos < (int)src.length()) {
+    char c = src.charAt(pos);
+    if (c == '\\' && pos + 1 < (int)src.length()) {
+      char n = src.charAt(pos + 1);
+      out += (n == 'n') ? '\n' : (n == 't') ? '\t' : (n == 'r') ? '\r' : n;
+      pos += 2;
+      continue;
+    }
+    pos++;
+    if (c == '"') return true;
+    out += c;
+  }
+  return false;
+}
+
+// Есть ли в документе хотя бы один раздел нашего формата настроек.
+static bool hasSettingsSection(const String &src) {
+  static const char *const kSections[] = {"\"throttle\"", "\"pas\"", "\"cruise\"",
+                                          "\"events\"", "\"wifi\"", "\"ap\"",
+                                          "\"pinNames\"", "\"customPins\""};
+  for (size_t i = 0; i < sizeof(kSections) / sizeof(kSections[0]); i++) {
+    if (src.indexOf(kSections[i]) != -1) return true;
+  }
+  return false;
+}
+
+// Сжимает JSON на месте: убирает пробелы/переносы вне строк. Импорт ищет секции
+// вида "\"throttle\":{", а файл, пересохранённый редактором с отступами, выглядел бы
+// как "\"throttle\": {" и молча пропускался.
+static void compactJson(String &src) {
+  bool inString = false;
+  bool escaped = false;
+  int w = 0;
+  for (int i = 0; i < (int)src.length(); i++) {
+    char c = src.charAt(i);
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c == '\\') escaped = true;
+      else if (c == '"') inString = false;
+    } else if (c == '"') {
+      inString = true;
+    } else if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+      continue;
+    }
+    if (w != i) src.setCharAt(w, c);
+    w++;
+  }
+  src.remove(w);
+}
+
+void handleSettingsUpload() {
+  HTTPUpload &upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    gSettingsUpload = String();
+    gSettingsUploadTooBig = false;
+    Serial.printf("Импорт настроек: файл %s\n", upload.filename.c_str());
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (gSettingsUploadTooBig) return;
+    if (gSettingsUpload.length() + upload.currentSize > SETTINGS_IMPORT_MAX_BYTES) {
+      gSettingsUpload = String();
+      gSettingsUploadTooBig = true;
+      Serial.println("Импорт настроек: файл больше лимита");
+      return;
+    }
+    gSettingsUpload.concat(reinterpret_cast<const char *>(upload.buf), upload.currentSize);
+  } else if (upload.status == UPLOAD_FILE_END) {
+    Serial.printf("Импорт настроек: принято %u байт\n", upload.totalSize);
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    gSettingsUpload = String();
+    gSettingsUploadTooBig = false;
+  }
+}
+
 // ================= Главная страница (хаб) =================
 void handleHub() { sendHubPage(server); }
 
@@ -46,14 +166,56 @@ void handleHub() { sendHubPage(server); }
 
 
 void handleSystemPage() {
-  String html = F(R"rawliteral(<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Система</title><style>)rawliteral");
-  html += getTopBarCss();
-  html += getSettingsCss();
-  html += F(R"rawliteral(</style></head><body>)rawliteral");
-  html += getTopBarHtml();
-  html += F(R"rawliteral(<div class="wrap"><div class="card"><h2>Система</h2><p><a href="/system/export">Экспортировать настройки</a></p><form method="POST" action="/system/import"><textarea name="settingsFile" rows="8" style="width:100%" placeholder="Вставьте JSON настроек"></textarea><button type="submit">Импортировать</button></form><p><a href="/update">Обновление прошивки</a></p><form method="POST" action="/system/factory-reset" onsubmit="return confirm('Сбросить все настройки?')"><button type="submit">Заводской сброс</button></form></div></div>)rawliteral");
-  html += getTopBarJs();
-  html += F("</body></html>");
+  String msg = server.arg("msg");
+  String banner;
+  if (msg.length()) {
+    banner = "<p class=\"banner " + (msg.startsWith("Ошибка") ? String("bad") : String("ok")) + "\">" + htmlEscape(msg) + "</p>";
+  }
+  String html = R"rawliteral(
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Система</title>
+<style>
+)rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
+textarea{width:100%;min-height:120px;padding:9px 10px;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:var(--ui-radius);font:inherit;resize:vertical}
+input[type=file]{padding:8px;border-style:dashed;cursor:pointer}
+.danger{border-color:var(--ui-danger);color:var(--ui-danger)}.danger:hover{background:var(--ui-danger);color:#fff}
+.banner{padding:10px 12px;border-radius:var(--ui-radius);border:1px solid var(--ui-success);background:var(--ui-success-soft);color:var(--ui-success);font-size:var(--ui-fs-mid)}
+.banner.bad{border-color:var(--ui-danger);background:var(--ui-danger-soft);color:var(--ui-danger)}
+details{margin-top:12px}summary{cursor:pointer;color:var(--ui-muted);font-size:var(--ui-fs-mid);padding:4px 0}
+</style></head><body>
+)rawliteral" + getTopBarHtml() + getBackMenuHtml() +R"rawliteral(
+<h1>Система</h1>
+)rawliteral" + banner + R"rawliteral(
+<fieldset><legend>Файл настроек</legend>
+<p class="fhint">Экспорт сохраняет все параметры одним JSON-файлом: газ, PAS, круиз, GPIO, Wi-Fi, AP и события. Импорт читает такой файл обратно и перезагружает плату.</p>
+<p><a class="card" href="/system/export" download="bike_controller_settings.json">&#8681; Скачать настройки (JSON)</a></p>
+<form method="POST" action="/system/import" enctype="multipart/form-data">
+<label for="settingsFileInput">Файл настроек (.json)</label>
+<input type="file" id="settingsFileInput" name="settingsFile" accept=".json,application/json,text/json" required>
+<button type="submit">Загрузить из файла</button>
+</form>
+<details><summary>Вставить JSON вручную</summary>
+<form method="POST" action="/system/import">
+<label for="settingsJson">JSON настроек</label>
+<textarea id="settingsJson" name="settingsFile" rows="8" placeholder='{"throttle":{...},"pas":{...}}'></textarea>
+<button type="submit">Импортировать текст</button>
+</form>
+</details>
+</fieldset>
+<fieldset><legend>Прошивка</legend>
+<p class="fhint">Загрузка нового .bin по воздуху. Плата перезагрузится сама.</p>
+<a class="card" href="/update">Обновление прошивки</a>
+</fieldset>
+<fieldset><legend>Сброс</legend>
+<p class="fhint">Все настройки вернутся к заводским: газ, PAS, круиз, события, распиновка и Wi-Fi.</p>
+<form method="POST" action="/system/factory-reset" onsubmit="return confirm('Сбросить все настройки?')">
+<button type="submit" class="danger">Заводской сброс</button>
+</form>
+</fieldset>
+)rawliteral" + getTopBarJs() + R"rawliteral(
+</body></html>
+)rawliteral";
   server.send(200, "text/html; charset=utf-8", html);
 }
 
@@ -70,7 +232,8 @@ void handleSettingsExport() {
   json += "\"spEn\":" + String(throttleSoftStopEnabled ? 1 : 0) + ",";
   json += "\"ssMs\":" + String(throttleSoftStartMs) + ",";
   json += "\"spMs\":" + String(throttleSoftStopMs) + ",";
-  json += "\"brakeCut\":" + String(ownBrakeCutoffEnabled ? 1 : 0);
+  json += "\"brakeCut\":" + String(ownBrakeCutoffEnabled ? 1 : 0) + ",";
+  json += "\"extRange\":" + String(throttleExtendedRangeAllowed ? 1 : 0);
   json += "},";
   json += "\"pas\":{";
   json += "\"magnets\":" + String(pasMagnetCount) + ",";
@@ -142,10 +305,50 @@ void handleSettingsExport() {
   json += "\"ssEn\":" + String(cruiseSoftStartEnabled ? 1 : 0) + ",";
   json += "\"spEn\":" + String(cruiseSoftStopEnabled ? 1 : 0) + ",";
   json += "\"ssMs\":" + String(cruiseSoftStartMs) + ",";
-  json += "\"spMs\":" + String(cruiseSoftStopMs);
+  json += "\"spMs\":" + String(cruiseSoftStopMs) + ",";
+  json += "\"enabled\":" + String(cruiseEnabled ? 1 : 0) + ",";
+  json += "\"confThr\":" + String(cruiseConfirmThrottleAfterStart ? 1 : 0) + ",";
+  json += "\"brkMode\":" + String(cruiseAfterBrakingMode) + ",";
+  json += "\"thrMode\":" + String(cruiseAfterThrottleMode);
   json += "}";
   json += "}";
-  server.send(200, "application/json", json);
+  // Отдаём именно файлом, иначе браузер показывает JSON в вкладке вместо сохранения.
+  server.sendHeader("Content-Disposition", "attachment; filename=\"bike_controller_settings.json\"", true);
+  server.sendHeader("Cache-Control", "no-store", true);
+  server.sendHeader("Connection", "close", true);
+  server.send(200, "application/json; charset=utf-8", json);
+}
+
+// Страница результата импорта: общий дизайн с остальными страницами, ссылка назад,
+// а при успехе — ожидание перезагрузки с автовозвратом в раздел «Система».
+static void sendImportResult(bool ok, const String &headline, const String &detail) {
+  String html = R"rawliteral(<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Импорт настроек</title>
+<style>
+)rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
+.banner{padding:10px 12px;border-radius:var(--ui-radius);border:1px solid var(--ui-success);background:var(--ui-success-soft);color:var(--ui-success)}
+.banner.bad{border-color:var(--ui-danger);background:var(--ui-danger-soft);color:var(--ui-danger)}
+</style></head><body>
+<h1>Импорт настроек</h1>
+)rawliteral";
+  html += String("<p class=\"banner") + (ok ? String("") : String(" bad")) + "\">" + htmlEscape(headline) + "</p>";
+  html += "<p class=\"fhint\">" + htmlEscape(detail) + "</p>";
+  if (ok) {
+    html += R"rawliteral(<p class="fhint">Плата перезагружается, чтобы применить пины и датчики. Страница откроется сама, когда устройство вернётся в сеть.</p>
+<script>
+setTimeout(function poll(){
+  fetch('/status/sys?_=' + Date.now(), {cache:'no-store'})
+    .then(function(r){ if(r.ok) location.href = '/system?msg=' + encodeURIComponent('Настройки загружены из файла'); else setTimeout(poll, 2000); })
+    .catch(function(){ setTimeout(poll, 2000); });
+}, 4000);
+</script>
+)rawliteral";
+  } else {
+    html += "<p><a class=\"card\" href=\"/system\">&larr; Вернуться в «Система»</a></p>";
+  }
+  html += "</body></html>";
+  server.send(ok ? 200 : 400, "text/html; charset=utf-8", html);
 }
 
 void handleSettingsImport() {
@@ -153,15 +356,39 @@ void handleSettingsImport() {
     server.send(405, "text/plain", "Method Not Allowed");
     return;
   }
-  if (!server.hasArg("settingsFile")) {
-    server.send(400, "text/plain", "No settings file uploaded");
+
+  // Источник JSON: сначала загруженный файл (multipart), затем поле settingsFile
+  // (форма с ручным вставленным текстом или curl).
+  String fileContent = gSettingsUpload;
+  const bool tooBig = gSettingsUploadTooBig;
+  gSettingsUpload = String();
+  gSettingsUploadTooBig = false;
+  const bool fromFile = fileContent.length() > 0;
+  if (!fromFile && server.hasArg("settingsFile")) fileContent = server.arg("settingsFile");
+  fileContent.trim();
+
+  if (tooBig) {
+    sendImportResult(false, "Ошибка: файл слишком большой",
+                     "Лимит — " + String(SETTINGS_IMPORT_MAX_BYTES / 1024) + " КБ. Удалите лишние правила событий или названия пинов и повторите.");
     return;
   }
-  String fileContent = server.arg("settingsFile");
-  if (fileContent.length() > SETTINGS_IMPORT_MAX_BYTES) {
-    server.send(413, "text/plain", "Файл настроек слишком большой");
+  if (fileContent.length() == 0) {
+    sendImportResult(false, fromFile ? "Ошибка: пустой файл" : "Ошибка: настройки не переданы",
+                     "Выберите JSON-файл, скачанный через «Скачать настройки», или вставьте текст вручную.");
     return;
   }
+  if (fileContent.length() > SETTINGS_IMPORT_MAX_BYTES || fileContent.indexOf('{') == -1 || !hasSettingsSection(fileContent)) {
+    sendImportResult(false, "Ошибка: это не файл настроек",
+                     "Ожидается JSON, экспортированный из этого устройства (разделы throttle / pas / cruise / events / wifi / ap / pinNames). Получено байт: " + String(fileContent.length()));
+    return;
+  }
+
+  String applied;  // перечисляем, какие разделы реально применены
+  compactJson(fileContent);  // терпим к "красивому" JSON с отступами
+  auto markApplied = [&applied](const char *name) {
+    if (applied.length()) applied += ", ";
+    applied += name;
+  };
 
   int idx = fileContent.indexOf("\"throttle\":{");
   if (idx != -1) {
@@ -190,7 +417,10 @@ void handleSettingsImport() {
       if (ok) throttleSoftStopEnabled = iv != 0;
       // Импорт не может отключить обязательное отключение по тормозу.
       ownBrakeCutoffEnabled = true;
+      iv = jsonIntAfter(throttleJson, "\"extRange\":", ok);
+      if (ok) throttleExtendedRangeAllowed = iv != 0;
       throttleSettingsSave();
+      markApplied("газ");
     }
   }
   idx = fileContent.indexOf("\"pas\":{");
@@ -223,8 +453,11 @@ void handleSettingsImport() {
       int pctPos = pasJson.indexOf("\"pct\":[");
       if (pctPos != -1) readPercentArray(pasJson.substring(pctPos + 6), pasLevelPercent, pasLevelsCount);
       pasCurrentLevel = constrain(pasCurrentLevel, 0, pasLevelsCount);
+      value = jsonIntAfter(pasJson, "\"enabled\":", ok);
+      if (ok) pasEnabled = value != 0;
       pasSettingsSave();
       reattachPasInterrupt();
+      markApplied("PAS");
     }
   }
   idx = fileContent.indexOf("\"wifi\":{");
@@ -234,8 +467,15 @@ void handleSettingsImport() {
       bool ssidOk = false, passOk = false;
       String importedSsid = jsonStringAfter(wifiJson, "\"ssid\":", ssidOk);
       String importedPass = jsonStringAfter(wifiJson, "\"pass\":", passOk);
+      // Пароль длиннее 63 байт разобрать нельзя: считаем, что ключа нет.
+      if (passOk && importedPass.length() > 63) passOk = false;
       if (ssidOk && importedSsid.length() > 0 && importedSsid.length() <= 32) {
-        wifiCredsSave(importedSsid, passOk && importedPass.length() <= 63 ? importedPass : "");
+        // Если ключа "pass" в файле нет (экспорт старой прошивки/обрезанный файл),
+        // оставляем текущий сохранённый пароль: иначе импорт собственного файла
+        // стирал бы креды и устройство теряло Wi-Fi после перезагрузки.
+        if (!passOk) importedPass = storedPass;
+        wifiCredsSave(importedSsid, importedPass);
+        markApplied("Wi-Fi");
       }
     }
   }
@@ -248,12 +488,14 @@ void handleSettingsImport() {
       bool ssidOk = false, passOk = false;
       String importedApSsid = jsonStringAfter(apJson, "\"ssid\":", ssidOk);
       String importedApPass = jsonStringAfter(apJson, "\"pass\":", passOk);
-      if (!passOk) importedApPass = "";
+      // Нет ключа "pass" — не превращаем точку доступа в открытую, оставляем текущий.
+      if (!passOk) importedApPass = storedApPass;
       String error;
       if (ssidOk && validApCredentials(importedApSsid, importedApPass, error)) {
         storedApSsid = importedApSsid;
         storedApPass = importedApPass;
         apSettingsSave();
+        markApplied("точка доступа");
       }
     }
   }
@@ -261,102 +503,102 @@ void handleSettingsImport() {
   // --- Пользовательские названия ролей GPIO ---
   idx = fileContent.indexOf("\"pinNames\":[");
   if (idx != -1) {
-    int pos = idx + 12;
-    for (int i = 0; i < PIN_ROLE_COUNT; i++) {
-      int q1 = fileContent.indexOf('\"', pos), q2 = q1 == -1 ? -1 : fileContent.indexOf('\"', q1 + 1);
-      if (q1 == -1 || q2 == -1) break;
-      String name = fileContent.substring(q1 + 1, q2);
-      if (normalizeUserLabel(name)) setUserLabel(pinRoleNames[i], name);
-      pos = q2 + 1;
+    int namesArr = fileContent.indexOf('[', idx);
+    int namesEnd = namesArr == -1 ? -1 : jsonBlockEnd(fileContent, namesArr, '[', ']');
+    if (namesEnd != -1) {
+      int pos = namesArr + 1;
+      for (int i = 0; i < PIN_ROLE_COUNT; i++) {
+        String name;
+        if (!nextJsonArrayString(fileContent, pos, namesEnd, name)) break;
+        if (normalizeUserLabel(name)) setUserLabel(pinRoleNames[i], name);
+      }
+      pinSettingsSave();
+      markApplied("имена пинов");
     }
-    pinSettingsSave();
   }
 
   // --- Дополнительные пользовательские GPIO ---
   idx = fileContent.indexOf("\"customPins\":[");
   if (idx != -1) {
-    memset(customPins, 0, sizeof(customPins));
-    int pos = idx + 14;
-    int curSlot = 0;
-    while (curSlot < CUSTOM_PIN_MAX) {
-      int objStart = fileContent.indexOf("{", pos);
-      if (objStart == -1 || objStart > fileContent.indexOf("]", pos)) break;
-      int objEnd = fileContent.indexOf("}", objStart);
-      if (objEnd == -1) break;
-      String obj = fileContent.substring(objStart + 1, objEnd);
-      int nmPos = obj.indexOf("\"nm\":\"");
-      int gpPos = obj.indexOf("\"gpio\":");
-      int mdPos = obj.indexOf("\"mode\":");
-      if (nmPos != -1 && gpPos != -1 && mdPos != -1) {
-        String nm = obj.substring(nmPos + 6);
-        int qEnd = nm.indexOf("\"");
-        if (qEnd != -1) nm = nm.substring(0, qEnd);
-        int gpioVal = obj.substring(gpPos + 7).toInt();
-        int mdPosEnd = obj.indexOf(",", mdPos);
-        String mdStr = obj.substring(mdPos + 7, mdPosEnd == -1 ? obj.length() : mdPosEnd);
-        int modeVal = mdStr.toInt();
-        if (normalizeUserLabel(nm) && gpioVal >= 0 && gpioVal <= 39 && modeVal >= 0 && modeVal <= 2) {
-          customPins[curSlot].used = 1;
-          customPins[curSlot].mode = (uint8_t)modeVal;
-          customPins[curSlot].gpio = (int16_t)gpioVal;
-          strncpy(customPins[curSlot].name, nm.c_str(), USER_LABEL_SIZE - 1);
-          customPins[curSlot].name[USER_LABEL_SIZE - 1] = 0;
-          curSlot++;
+    int pinsArr = fileContent.indexOf('[', idx);
+    int pinsEnd = pinsArr == -1 ? -1 : jsonBlockEnd(fileContent, pinsArr, '[', ']');
+    if (pinsEnd != -1) {
+      memset(customPins, 0, sizeof(customPins));
+      int pos = pinsArr + 1;
+      int curSlot = 0;
+      while (curSlot < CUSTOM_PIN_MAX) {
+        String obj;
+        if (!nextJsonArrayObject(fileContent, pos, pinsEnd, obj)) break;
+        int gpPos = obj.indexOf("\"gpio\":");
+        int mdPos = obj.indexOf("\"mode\":");
+        bool nmOk = false;
+        String nm = jsonStringAfter(obj, "\"nm\":", nmOk);
+        if (nmOk && gpPos != -1 && mdPos != -1) {
+          int gpioVal = obj.substring(gpPos + 7).toInt();
+          int modeVal = obj.substring(mdPos + 7).toInt();
+          if (normalizeUserLabel(nm) && gpioVal >= 0 && gpioVal <= 39 && modeVal >= 0 && modeVal <= 2) {
+            customPins[curSlot].used = 1;
+            customPins[curSlot].mode = (uint8_t)modeVal;
+            customPins[curSlot].gpio = (int16_t)gpioVal;
+            strncpy(customPins[curSlot].name, nm.c_str(), USER_LABEL_SIZE - 1);
+            customPins[curSlot].name[USER_LABEL_SIZE - 1] = 0;
+            curSlot++;
+          }
         }
       }
-      pos = objEnd + 1;
+      pinSettingsSave();
+      markApplied("доп. GPIO");
     }
-    pinSettingsSave();
   }
 
-  // --- Event Constructor Settings ---
+  // --- Правила конструктора событий ---
+  // Массив rules содержит вложенный массив acts, поэтому границы находятся
+  // подсчётом скобок, а не первым "]".
   idx = fileContent.indexOf("\"events\":{");
   if (idx != -1) {
-    int rulesStart = fileContent.indexOf("\"rules\":[", idx);
-    int rulesEnd = fileContent.indexOf("]", rulesStart);
-    if (rulesStart != -1 && rulesEnd != -1) {
-      String rulesJson = fileContent.substring(rulesStart + 9, rulesEnd);
-      int pos = 0;
+    int rulesKey = fileContent.indexOf("\"rules\"", idx);
+    int rulesArr = rulesKey == -1 ? -1 : fileContent.indexOf('[', rulesKey);
+    int rulesEnd = rulesArr == -1 ? -1 : jsonBlockEnd(fileContent, rulesArr, '[', ']');
+    if (rulesEnd != -1) {
+      int pos = rulesArr + 1;
       for (int i = 0; i < EVENT_MAX_RULES; i++) {
-        int end = rulesJson.indexOf('}', pos);
-        if (end == -1) break;
-        String item = rulesJson.substring(pos, end + 1);
+        String item;
+        if (!nextJsonArrayObject(fileContent, pos, rulesEnd, item)) break;
         EventRule &r = eventRules[i];
         memset(r.actions, 0, sizeof(r.actions));
         memset(r.actionValues, 0, sizeof(r.actionValues));
+        bool okStr = false;
+        String name = jsonStringAfter(item, "\"name\":", okStr);
+        if (okStr && normalizeUserLabel(name)) setUserLabel(eventRuleNames[i], name);
         int p;
-        if ((p=item.indexOf("\"name\":\""))!=-1) { String name=item.substring(p+8); int e=name.indexOf('\"'); if(e!=-1){name=name.substring(0,e);if(normalizeUserLabel(name))setUserLabel(eventRuleNames[i],name);} }
-        if ((p=item.indexOf("\"en\":"))!=-1) r.enabled=item.substring(p+5).toInt()!=0;
-        if ((p=item.indexOf("\"tr\":"))!=-1) r.trigger=item.substring(p+5).toInt();
-        if ((p=item.indexOf("\"co\":"))!=-1) r.condition=item.substring(p+5).toInt();
-        if ((p=item.indexOf("\"pr\":"))!=-1) r.priority=item.substring(p+5).toInt();
-        if ((p=item.indexOf("\"ct\":"))!=-1) r.count=item.substring(p+5).toInt();
-        if ((p=item.indexOf("\"ms\":"))!=-1) r.intervalMs=item.substring(p+5).toInt();
+        if ((p = item.indexOf("\"en\":")) != -1) r.enabled = item.substring(p + 5).toInt() != 0;
+        if ((p = item.indexOf("\"tr\":")) != -1) r.trigger = item.substring(p + 5).toInt();
+        if ((p = item.indexOf("\"co\":")) != -1) r.condition = item.substring(p + 5).toInt();
+        if ((p = item.indexOf("\"pr\":")) != -1) r.priority = constrain(item.substring(p + 5).toInt(), 1, 100);
+        if ((p = item.indexOf("\"ct\":")) != -1) r.count = constrain(item.substring(p + 5).toInt(), 1, 100);
+        if ((p = item.indexOf("\"ms\":")) != -1) r.intervalMs = constrain(item.substring(p + 5).toInt(), 0, 1000000L);
         // Новый формат: список результатов "acts":[{"ac":..,"va":..},...]
-        int actsPos = item.indexOf("\"acts\":[");
-        if (actsPos != -1) {
-          int actsEnd = item.indexOf(']', actsPos);
-          if (actsEnd != -1) {
-            String actsJson = item.substring(actsPos + 8, actsEnd);
-            int ap = 0;
-            for (int k = 0; k < EVENT_MAX_ACTIONS; k++) {
-              int ae = actsJson.indexOf('}', ap);
-              if (ae == -1) break;
-              String act = actsJson.substring(ap, ae + 1);
-              int q;
-              if ((q=act.indexOf("\"ac\":"))!=-1) r.actions[k]=act.substring(q+6).toInt();
-              if ((q=act.indexOf("\"va\":"))!=-1) r.actionValues[k]=act.substring(q+6).toInt();
-              ap = ae + 1;
-            }
+        int actsKey = item.indexOf("\"acts\"");
+        int actsArr = actsKey == -1 ? -1 : item.indexOf('[', actsKey);
+        int actsEnd = actsArr == -1 ? -1 : jsonBlockEnd(item, actsArr, '[', ']');
+        if (actsEnd != -1) {
+          int ap = actsArr + 1;
+          for (int k = 0; k < EVENT_MAX_ACTIONS; k++) {
+            String act;
+            if (!nextJsonArrayObject(item, ap, actsEnd, act)) break;
+            int q;
+            // Ключ "\"ac\":" — 5 символов, значение начинается сразу после него.
+            if ((q = act.indexOf("\"ac\":")) != -1) r.actions[k] = act.substring(q + 5).toInt();
+            if ((q = act.indexOf("\"va\":")) != -1) r.actionValues[k] = act.substring(q + 5).toInt();
           }
         } else {
           // Старый формат: одиночное действие переносится в слот 0.
-          if ((p=item.indexOf("\"ac\":"))!=-1) r.actions[0]=item.substring(p+5).toInt();
-          if ((p=item.indexOf("\"va\":"))!=-1) r.actionValues[0]=item.substring(p+5).toInt();
+          if ((p = item.indexOf("\"ac\":")) != -1) r.actions[0] = item.substring(p + 5).toInt();
+          if ((p = item.indexOf("\"va\":")) != -1) r.actionValues[0] = item.substring(p + 5).toInt();
         }
-        pos=end+2;
       }
       eventSettingsSave();
+      markApplied("события");
     }
   }
 
@@ -383,34 +625,130 @@ void handleSettingsImport() {
       int pctPos = cruiseJson.indexOf("\"pct\":[");
       if (pctPos != -1) readPercentArray(cruiseJson.substring(pctPos + 6), cruiseLevelPercent, cruiseLevelsCount);
       cruiseCurrentLevel = constrain(cruiseCurrentLevel, 0, cruiseLevelsCount);
+      value = jsonIntAfter(cruiseJson, "\"enabled\":", ok);
+      if (ok) cruiseEnabled = value != 0;
+      value = jsonIntAfter(cruiseJson, "\"confThr\":", ok);
+      if (ok) cruiseConfirmThrottleAfterStart = value != 0;
+      value = jsonIntAfter(cruiseJson, "\"brkMode\":", ok);
+      if (ok) cruiseAfterBrakingMode = constrain(value, 0, 2);
+      value = jsonIntAfter(cruiseJson, "\"thrMode\":", ok);
+      if (ok) cruiseAfterThrottleMode = constrain(value, 0, 2);
       cruiseSettingsSave();
+      markApplied("круиз");
     }
   }
 
-  server.send(200, "text/plain", "Настройки успешно импортированы. Перезагрузка...");
-  delay(1500);
+  if (applied.length() == 0) {
+    sendImportResult(false, "Ошибка: ни один раздел не распознан",
+                     "Файл похож на JSON, но нужные секции в нём не найдены. Скачайте настройки заново на этой плате и попробуйте снова.");
+    return;
+  }
+
+  sendImportResult(true, "Настройки загружены",
+                   "Применено байт: " + String(fileContent.length()) + ". Разделы: " + applied + ".");
+  delay(800);
   ESP.restart();
 }
 
-// ================= Веб: заливка прошивки прямо через браузер =================
+// ================= Веб: заливка прошивки и образа LittleFS =================
 void handleUpdatePage() { server.send(200, "text/html", getUpdatePageHtml()); }
+
+// Заливка идёт через один POST /update: прошивка (.bin) — в app-раздел (U_FLASH),
+// образ файловой системы (.fs.bin) — в раздел FS (U_SPIFFS). Тип определяется
+// по суффиксу имени файла. Update содержимое FS-образа не проверяет вовсе,
+// поэтому валидацию (магию littlefs и кратность размеру блока) делаем сами
+// до записи во flash: при ошибке ничего не пишем и не перезагружаемся.
+static bool gFsImageUpload = false;   // текущая заливка — образ ФС (.fs.bin)
+static bool gUpdateFailed = false;    // ошибка нашей валидации/записи
+static String gUpdateError;           // человекочитаемая причина для /update-ответа
+static bool gFsHeaderChecked = false; // магия образа уже проверена
+static uint8_t gFsHeader[12];         // первые байты образа (копятся между чанками)
+static size_t gFsHeaderLen = 0;
+// Суперблок littlefs: тег имени (4 байта), затем магия "littlefs" на offset 4.
+static const uint8_t FS_MAGIC[8] = {'l', 'i', 't', 't', 'l', 'e', 'f', 's'};
+static const size_t FS_MAGIC_OFFSET = 4;
+static const size_t FS_BLOCK_SIZE = 4096; // размер блока LittleFS на ESP32
 
 void handleUpdateUpload() {
   HTTPUpload& upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
-    Serial.printf("Обновление: %s\n", upload.filename.c_str());
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
+    gFsImageUpload = upload.filename.endsWith(".fs.bin");
+    gUpdateFailed = false;
+    gUpdateError = "";
+    gFsHeaderChecked = false;
+    gFsHeaderLen = 0;
+    Serial.printf("Обновление: %s (%s)\n", upload.filename.c_str(),
+                  gFsImageUpload ? "образ LittleFS" : "прошивка");
+    int cmd = gFsImageUpload ? U_SPIFFS : U_FLASH;
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN, cmd)) {
+      gUpdateFailed = true;
+      gUpdateError = gFsImageUpload ? "нет раздела файловой системы" : "не удалось начать обновление";
+      Update.printError(Serial);
+    }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) Update.printError(Serial);
+    if (gUpdateFailed) return; // поток добираем, но во flash больше не пишем
+    if (gFsImageUpload && !gFsHeaderChecked) {
+      // Накапливаем первые 12 байт образа (первый HTTP-чанк может быть короче).
+      size_t need = sizeof(gFsHeader) - gFsHeaderLen;
+      size_t take = upload.currentSize < need ? upload.currentSize : need;
+      memcpy(gFsHeader + gFsHeaderLen, upload.buf, take);
+      gFsHeaderLen += take;
+      if (gFsHeaderLen == sizeof(gFsHeader)) {
+        gFsHeaderChecked = true;
+        if (memcmp(gFsHeader + FS_MAGIC_OFFSET, FS_MAGIC, sizeof(FS_MAGIC)) != 0) {
+          gUpdateFailed = true;
+          gUpdateError = "файл не похож на образ LittleFS (нет магии \"littlefs\")";
+          Serial.println("Обновление: неверная магия FS-образа, отмена");
+          Update.abort();
+          return;
+        }
+      }
+    }
+    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+      gUpdateFailed = true;
+      gUpdateError = "ошибка записи во flash";
+      Update.printError(Serial);
+    }
   } else if (upload.status == UPLOAD_FILE_END) {
-    if (Update.end(true)) Serial.printf("Обновление успешно: %u байт\n", upload.totalSize);
-    else Update.printError(Serial);
+    if (gUpdateFailed) {
+      Serial.printf("Обновление отменено: %s\n", gUpdateError.c_str());
+      return;
+    }
+    // Валидный образ LittleFS всегда заполнен до целого числа блоков;
+    // обрезанный файл означал бы повреждённую ФС.
+    if (gFsImageUpload && (upload.totalSize == 0 || (upload.totalSize % FS_BLOCK_SIZE) != 0)) {
+      gUpdateFailed = true;
+      gUpdateError = "размер образа ФС (" + String((unsigned)upload.totalSize) +
+                     " байт) не кратен " + String((unsigned)FS_BLOCK_SIZE);
+      Serial.println("Обновление: некорректный размер FS-образа, отмена");
+      Update.abort();
+      return;
+    }
+    if (Update.end(true)) Serial.printf("Обновление успешно: %u байт%s\n", upload.totalSize,
+                                        gFsImageUpload ? " (ФС)" : "");
+    else {
+      gUpdateFailed = true;
+      gUpdateError = "Update сообщил об ошибке при завершении";
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    gUpdateFailed = true;
+    if (gUpdateError.length() == 0) gUpdateError = "загрузка прервана";
+    Update.abort();
   }
 }
 
 void handleUpdateResult() {
   server.sendHeader("Connection", "close");
-  server.send(200, "text/plain", Update.hasError() ? "ОШИБКА обновления" : "OK, перезагружаюсь...");
+  if (gUpdateFailed) {
+    // Ничего не записано (отмена до записи) — остаёмся на текущей прошивке.
+    server.send(500, "text/plain", "ОШИБКА обновления: " + gUpdateError);
+    return;
+  }
+  server.send(200, "text/plain",
+              Update.hasError() ? "ОШИБКА обновления"
+                                : (gFsImageUpload ? "OK, ФС обновлена, перезагружаюсь..."
+                                                  : "OK, перезагружаюсь..."));
   delay(1000);
   ESP.restart();
 }

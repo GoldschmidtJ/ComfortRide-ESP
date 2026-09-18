@@ -90,17 +90,16 @@ String getUpdatePageHtml() {
   html += getTopBarCss();
   html += getSettingsCss();
   html += R"rawliteral(
-body{max-width:400px}.update-hint{color:var(--ui-muted);font-size:13px}input[type=file]{padding:8px}</style>
+body{max-width:400px}.update-hint{color:var(--ui-muted);font-size:var(--ui-fs-small)}input[type=file]{padding:8px}</style>
 </head><body>
 )rawliteral";
   html += getTopBarHtml();
+  html += getBackMenuHtml();
   html += R"rawliteral(
-
-<p><a class="back-link" href="/">&larr; Меню</a></p>
-<h1>Загрузить прошивку (.bin)</h1>
-<p class="update-hint">В Arduino IDE: Sketch &rarr; Export Compiled Binary — появится .bin рядом со скетчем. Выбери его тут и жми "Залить". Займёт секунд 20-30, плата сама перезагрузится.</p>
+<h1>Загрузить прошивку (.bin) или ФС (.fs.bin)</h1>
+<p class="update-hint">файл прошивки .bin / файл ФС .fs.bin (образ LittleFS). Прошивка: в Arduino IDE Sketch &rarr; Export Compiled Binary — появится .bin рядом со скетчем. ФС: собери образ (<code>pio run -t buildfs</code>, переименуй в <code>*.fs.bin</code>) — он заменит страницы веб-интерфейса. Выбери файл тут и жми "Залить". Займёт секунд 20-30, плата сама перезагрузится.</p>
 <form method="POST" action="/update" enctype="multipart/form-data">
-<input type="file" name="update" accept=".bin">
+<input type="file" name="update" accept=".bin,.fs.bin">
 <button type="submit">Залить</button>
 </form>
 )rawliteral";
@@ -117,19 +116,19 @@ void sendDebugPage(WebServer &server) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Отладка</title>
 <style>
-:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-black:#000;--ui-radius:8px;--ui-control-height:44px}
-*{box-sizing:border-box}body{background:var(--ui-bg);color:var(--ui-text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.45;padding:20px;max-width:760px;margin:auto}h1{font-size:24px;line-height:1.2}h2{font-size:18px;line-height:1.3}
+:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-dark:#0a0f0d;--ui-black:#000;--ui-led:#ff8c00;--ui-led-glow:#ff7700;--ui-led-off:#1e140a;--ui-radius:8px;--ui-control-height:44px;--ui-on-accent:#fff;--ui-success-soft:rgba(46,204,113,.12);--ui-warning-soft:rgba(243,156,18,.15);--ui-danger-soft:rgba(231,76,60,.12);--ui-font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-fs-h1:24px;--ui-fs-h2:18px;--ui-fs-body:16px;--ui-fs-small:13px;--ui-fs-mid:14px;--ui-fs-tiny:12px}
+*{box-sizing:border-box}body{background:var(--ui-bg);color:var(--ui-text);font-family:var(--ui-font);font-size:var(--ui-fs-body);line-height:1.45;padding:20px;max-width:760px;margin:auto}h1{font-size:var(--ui-fs-h1);line-height:1.2}h2{font-size:var(--ui-fs-h2);line-height:1.3}
 canvas{background:var(--ui-black);border:1px solid var(--ui-border);border-radius:var(--ui-radius);width:100%;max-width:700px;display:block}
-.debug-tools{margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px}.tool-label{font-size:16px}.osc-toggle{margin-left:10px;font-weight:600;font-size:16px;min-height:44px;display:flex;align-items:center;gap:8px}.osc-toggle input{width:20px;height:20px;accent-color:var(--ui-accent)}.tbtn{display:inline-flex;align-items:center;justify-content:center;min-height:var(--ui-control-height);background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);padding:9px 12px;border-radius:var(--ui-radius);cursor:pointer;margin:0;font:inherit;font-weight:600;transition:background .12s,border-color .12s}.tbtn.selected{background:var(--ui-accent);border-color:var(--ui-accent)}
+.debug-tools{margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px}.tool-label{font-size:var(--ui-fs-body)}.osc-toggle{margin-left:10px;font-weight:600;font-size:var(--ui-fs-body);min-height:44px;display:flex;align-items:center;gap:8px}.osc-toggle input{width:20px;height:20px;accent-color:var(--ui-accent)}.tbtn{display:inline-flex;align-items:center;justify-content:center;min-height:var(--ui-control-height);background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);padding:9px 12px;border-radius:var(--ui-radius);cursor:pointer;margin:0;font:inherit;font-weight:600;transition:background .12s,border-color .12s}.tbtn.selected{background:var(--ui-accent);border-color:var(--ui-accent)}
 .tbtn:hover{background:var(--ui-hover)}.tbtn:active{background:var(--ui-active)}.tbtn:focus-visible,a:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
-.legend{display:flex;gap:15px;flex-wrap:wrap;margin:10px 0;font-size:13px}
+.legend{display:flex;gap:15px;flex-wrap:wrap;margin:10px 0;font-size:var(--ui-fs-small)}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block}.dot-in{background:var(--ui-accent)}.dot-out{background:var(--ui-danger)}.dot-brake{background:var(--ui-warning)}.dot-pas{background:var(--ui-success)}.dot-btn{background:var(--ui-purple)}
-#vals{font-size:14px;margin-top:10px;line-height:1.6}
-.bus-card{max-width:700px;margin-top:22px;padding:14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-card)}.bus-card h2{margin-top:0}.bus-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.bus-link{text-decoration:none;display:inline-block}#busStatus{font-size:13px;line-height:1.5;margin:8px 0}#busChart{height:220px}
+#vals{font-size:var(--ui-fs-mid);margin-top:10px;line-height:1.6}
+.bus-card{max-width:700px;margin-top:22px;padding:14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-card)}.bus-card h2{margin-top:0}.bus-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.bus-link{text-decoration:none;display:inline-block}#busStatus{font-size:var(--ui-fs-small);line-height:1.5;margin:8px 0}#busChart{height:220px}
 a{color:var(--ui-accent)}
 </style></head><body>
-<p><a href="/">&larr; Настройки</a></p>
+<p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>
 <h1>Отладка (мини-осциллограф)</h1>
 <div class="debug-tools">
   <span class="tool-label">Масштаб времени:</span>
@@ -344,11 +343,11 @@ void sendHubPage(WebServer &server) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenBike Controller v0.3.1</title>
 <style>
-:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-radius:8px;--ui-control-height:44px}
-*{box-sizing:border-box}body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.45;padding:20px;padding-top:max(20px,env(safe-area-inset-top));max-width:560px;margin:auto;background:var(--ui-bg);color:var(--ui-text)}
-.top-bar-sticky{position:sticky;top:0;top:env(safe-area-inset-top);z-index:9999;background:var(--ui-card);border-bottom:1px solid var(--ui-border);padding:8px 12px;margin:-20px -20px 15px;font-size:12px;color:var(--ui-muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
-.tb-item{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.tb-link{color:var(--ui-accent);text-decoration:none;padding:2px 6px;border-radius:6px;background:var(--ui-button);border:1px solid var(--ui-border)}.tb-link:hover{background:var(--ui-hover);color:var(--ui-text)}.tb-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.dot-green{background:var(--ui-success);box-shadow:0 0 5px var(--ui-success)}.dot-yellow{background:var(--ui-warning);box-shadow:0 0 5px var(--ui-warning)}.dot-red{background:var(--ui-danger)}.dot-gray{background:var(--ui-muted)}
-.header{text-align:center;margin-bottom:18px}.header h1{margin:0;font-size:24px;line-height:1.2}.version,.u-muted{color:var(--ui-muted)}.u-small{font-size:12px}.u-dim{opacity:.7}
+:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-dark:#0a0f0d;--ui-black:#000;--ui-led:#ff8c00;--ui-led-glow:#ff7700;--ui-led-off:#1e140a;--ui-radius:8px;--ui-control-height:44px;--ui-on-accent:#fff;--ui-success-soft:rgba(46,204,113,.12);--ui-warning-soft:rgba(243,156,18,.15);--ui-danger-soft:rgba(231,76,60,.12);--ui-font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-fs-h1:24px;--ui-fs-h2:18px;--ui-fs-body:16px;--ui-fs-small:13px;--ui-fs-mid:14px;--ui-fs-tiny:12px}
+*{box-sizing:border-box}body{font-family:var(--ui-font);font-size:var(--ui-fs-body);line-height:1.45;padding:20px;padding-top:max(20px,env(safe-area-inset-top));max-width:560px;margin:auto;background:var(--ui-bg);color:var(--ui-text)}
+.top-bar-sticky{position:sticky;top:0;top:env(safe-area-inset-top);z-index:9999;background:var(--ui-card);border-bottom:1px solid var(--ui-border);padding:8px 12px;margin:-20px -20px 15px;font-size:var(--ui-fs-tiny);color:var(--ui-muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.tb-item{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.tb-link{color:var(--ui-accent);text-decoration:none;padding:2px 6px;border-radius:6px;background:var(--ui-button);border:1px solid var(--ui-border);transition:background .2s,border-color .2s}.tb-link:hover{background:var(--ui-hover);border-color:var(--ui-muted);color:var(--ui-text)}.tb-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.dot-green{background:var(--ui-success);box-shadow:0 0 5px var(--ui-success)}.dot-yellow{background:var(--ui-warning);box-shadow:0 0 5px var(--ui-warning)}.dot-red{background:var(--ui-danger)}.dot-gray{background:var(--ui-muted)}
+.header{text-align:center;margin-bottom:18px}.header h1{margin:0;font-size:var(--ui-fs-h1);line-height:1.2}.version,.u-muted{color:var(--ui-muted)}.u-small{font-size:var(--ui-fs-tiny)}.u-dim{opacity:.7}
 a.card{display:flex;align-items:center;justify-content:center;min-height:var(--ui-control-height);background:var(--ui-button);color:var(--ui-text);padding:12px 15px;border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin-bottom:10px;text-decoration:none;text-align:center;font-weight:600;transition:background .12s,border-color .12s}
 a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active)}a.primary{background:var(--ui-accent);border-color:var(--ui-accent);color:#fff}a:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
 @media(max-width:420px){body{padding-left:12px;padding-right:12px}.top-bar-sticky{margin-left:-12px;margin-right:-12px;justify-content:flex-start}}
@@ -400,9 +399,11 @@ void sendEmulationPage(WebServer &server) {
 <title>OpenBike Controller v0.3.1</title>
 <style>
 
-:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-dark:#0a0f0d;--ui-black:#000;--ui-led:#ff8c00;--ui-led-glow:#ff7700;--ui-led-off:#1e140a;--ui-radius:8px;--ui-control-height:44px}
-.u-muted{color:var(--ui-muted)}.u-small{font-size:12px}.u-dim{opacity:.7}.back-link,a.back{color:var(--ui-accent);text-decoration:none}.hint{color:var(--ui-muted);font-size:13px}.is-hidden{display:none!important}
-.top-bar-sticky{position:sticky;top:0;left:0;right:0;z-index:9999;background:var(--ui-card);border-bottom:1px solid var(--ui-border);padding:8px 12px;margin:-20px -20px 15px -20px;font-size:12px;color:var(--ui-muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-dark:#0a0f0d;--ui-black:#000;--ui-led:#ff8c00;--ui-led-glow:#ff7700;--ui-led-off:#1e140a;--ui-radius:8px;--ui-control-height:44px;--ui-on-accent:#fff;--ui-success-soft:rgba(46,204,113,.12);--ui-warning-soft:rgba(243,156,18,.15);--ui-danger-soft:rgba(231,76,60,.12);--ui-font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-fs-h1:24px;--ui-fs-h2:18px;--ui-fs-body:16px;--ui-fs-small:13px;--ui-fs-mid:14px;--ui-fs-tiny:12px}
+.back-link:hover,a.back:hover{text-decoration:underline;background:var(--ui-button)}
+.back-row{margin:0 0 12px}
+.u-muted{color:var(--ui-muted)}.u-small{font-size:var(--ui-fs-tiny)}.u-dim{opacity:.7}.back-link,a.back{display:inline-block;color:var(--ui-accent);text-decoration:none;font-size:var(--ui-fs-small);padding:6px 10px;margin:0 0 0 -10px;border-radius:6px}.hint{color:var(--ui-muted);font-size:var(--ui-fs-small)}.is-hidden{display:none!important}
+.top-bar-sticky{position:sticky;top:0;top:env(safe-area-inset-top);z-index:9999;background:var(--ui-card);border-bottom:1px solid var(--ui-border);padding:8px 12px;margin:-20px -20px 15px;font-size:var(--ui-fs-tiny);color:var(--ui-muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
 .tb-item{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .tb-link{color:var(--ui-accent);text-decoration:none;padding:2px 6px;border-radius:6px;background:var(--ui-button);border:1px solid var(--ui-border);transition:background .2s,border-color .2s}
 .tb-link:hover{background:var(--ui-hover);border-color:var(--ui-muted);color:var(--ui-text)}
@@ -412,11 +413,11 @@ void sendEmulationPage(WebServer &server) {
 .dot-red{background:var(--ui-danger)}
 .dot-gray{background:var(--ui-muted)}
 
-body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.45;padding:20px;max-width:560px;margin:auto;background:var(--ui-bg);color:var(--ui-text)}
-.header{text-align:center;margin-bottom:16px}.header h1{margin:0;font-size:24px;line-height:1.2}.header .version{color:var(--ui-muted);font-size:14px}
+body{font-family:var(--ui-font);font-size:var(--ui-fs-body);line-height:1.45;padding:20px;max-width:560px;margin:auto;background:var(--ui-bg);color:var(--ui-text)}
+.header{text-align:center;margin-bottom:16px}.header h1{margin:0;font-size:var(--ui-fs-h1);line-height:1.2}.header .version{color:var(--ui-muted);font-size:var(--ui-fs-mid)}
 a.card{display:block;background:var(--ui-button);color:var(--ui-text);padding:15px;border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin-bottom:10px;text-decoration:none;transition:background .2s,border-color .2s}
 a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active)}
-.warn{background:var(--ui-card);border:1px solid var(--ui-danger);color:var(--ui-text);padding:12px;border-radius:var(--ui-radius);margin-bottom:16px;font-weight:bold;font-size:13px}
+.warn{background:var(--ui-card);border:1px solid var(--ui-danger);color:var(--ui-text);padding:12px;border-radius:var(--ui-radius);margin-bottom:16px;font-weight:bold;font-size:var(--ui-fs-small)}
 
 /* LED Matrix Simulator */
 .matrix-card{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:12px;padding:10px;margin-bottom:12px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.4);transition:all .2s}
@@ -429,8 +430,8 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
 .sim-left-col{min-width:0;display:flex;flex-direction:column;gap:8px}
 .sim-section-title{font-size:10px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:var(--ui-muted);margin-bottom:2px}
 .sim-btns-group{display:flex;flex-direction:row;gap:6px;width:100%}
-.sim-side-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 6px;font-size:13px;font-weight:bold;border-radius:8px;border:1px solid var(--ui-border);background:var(--ui-button);color:var(--ui-text);cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:background .1s,border-color .1s}
-.sim-btn-ico{font-size:18px;line-height:1}.sim-side-btn:hover{background:var(--ui-hover)}.sim-side-btn:active{background:var(--ui-active)}
+.sim-side-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 6px;font-size:var(--ui-fs-small);font-weight:bold;border-radius:8px;border:1px solid var(--ui-border);background:var(--ui-button);color:var(--ui-text);cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:background .1s,border-color .1s}
+.sim-btn-ico{font-size:var(--ui-fs-h2);line-height:1}.sim-side-btn:hover{background:var(--ui-hover)}.sim-side-btn:active{background:var(--ui-active)}
 .sim-side-btn:focus-visible,.dpad-btn:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
 .sim-side-btn.active{background:var(--ui-card);border-color:var(--ui-danger);color:var(--ui-text)}
 .sim-side-btn.pedal-btn.active{background:var(--ui-card);border-color:var(--ui-success);color:var(--ui-text)}
@@ -438,12 +439,12 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
 .sim-throttle-group{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--ui-card);border:1px solid var(--ui-border);border-radius:10px;padding:8px 6px}
 .sim-throttle-label{font-size:10px;font-weight:900;color:var(--ui-muted);text-transform:uppercase;letter-spacing:1px}
 .sim-slider-vert{writing-mode:vertical-lr;direction:rtl;-webkit-appearance:slider-vertical;appearance:slider-vertical;width:24px;height:126px;cursor:pointer;accent-color:var(--ui-accent)}
-.sim-throttle-val{font-size:12px;font-weight:bold;color:var(--ui-accent);min-width:36px;text-align:center}
+.sim-throttle-val{font-size:var(--ui-fs-tiny);font-weight:bold;color:var(--ui-accent);min-width:36px;text-align:center}
 
 /* D-Pad Джойстик */
 .joystick-panel{align-self:center;background:var(--ui-card);border:1px solid var(--ui-border);border-radius:12px;padding:7px;width:fit-content;max-width:100%;min-width:0;box-sizing:border-box;margin-bottom:0;box-shadow:0 4px 12px rgba(0,0,0,.35);display:flex;flex-direction:column;justify-content:flex-start}.joystick-panel .sim-section-title,.joystick-panel .joy-screen{width:193px;max-width:100%;box-sizing:border-box}
-.joy-screen{background:var(--ui-dark);border:1px solid var(--ui-border);border-radius:10px;padding:8px 10px;margin-bottom:10px;text-align:center;font-family:monospace}
-.screen-mode{font-size:12px;font-weight:bold;letter-spacing:1px;color:var(--ui-muted);text-transform:uppercase}.screen-mode.mode-pas{color:var(--ui-success)}.screen-mode.mode-cruise{color:var(--ui-accent)}.screen-mode.mode-off{color:var(--ui-danger)}
+.joy-screen{background:var(--ui-dark);border:1px solid var(--ui-border);border-radius:10px;padding:8px 10px;margin-bottom:10px;text-align:center;font-family:var(--ui-mono)}
+.screen-mode{font-size:var(--ui-fs-tiny);font-weight:bold;letter-spacing:1px;color:var(--ui-muted);text-transform:uppercase}.screen-mode.mode-pas{color:var(--ui-success)}.screen-mode.mode-cruise{color:var(--ui-accent)}.screen-mode.mode-off{color:var(--ui-danger)}
 .screen-val{font-size:34px;font-weight:900;color:var(--ui-text);margin:4px 0}.screen-status{font-size:10px;color:var(--ui-muted);font-weight:bold;text-transform:uppercase}.screen-status.dirty{color:var(--ui-warning);animation:blink 1s infinite}
 @keyframes blink{50%{opacity:0.4}}
 
@@ -490,7 +491,7 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
 </div>
 
 <div class="header">
-  <p><a href="/" class="back-link">&larr; Главное меню</a></p>
+  <p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>
   <h1>Эмуляция управления</h1>
   <div class="version">v0.3.1 &bull; 16&times;32 LED Matrix</div>
 </div>
@@ -625,17 +626,20 @@ updateSysStatus();
 let activeMode = "off";
 let activePasLvl = 0;
 let activeCruiseLvl = 0;
-const pasMax = 5;
-const cruiseMax = 5;
+let pasMax = 5;
+let cruiseMax = 5;
 
 const cfgThrottleInMin = 1.10;
 const cfgThrottleInMax = 4.10;
 const cfgThrottleOutMin = 1.10;
 const cfgThrottleOutMax = 4.10;
 
-const cfgCruiseConfirmThrottle = false;
-const cfgCruiseAfterBraking = 1;
-const cfgCruiseAfterThrottle = 2;
+// Поведение круиза: по умолчанию совпадает с прошивкой (cruise.cpp),
+// реальные значения подтягиваются из /status/sys (cruise_conf_thr и т.д.)
+let cfgCruiseConfirmThrottle = false;
+let cfgCruiseAfterBraking = 1;
+let cfgCruiseAfterThrottle = 2;
+let cruiseLevelPcts = []; // Цели уровней круиза в % (из прошивки)
 
 let draftMode = (activeMode === "off") ? "pas" : activeMode;
 let draftPasLvl = activePasLvl;
@@ -747,24 +751,8 @@ const SETTINGS_MENU = [
   { id: 'out_max', name: 'THROTTLE OUT MAX', unit: 'V', step: 0.05, min: 0.5, max: 5.0, val: cfgThrottleOutMax }
 ];
 
-// Тормоз: квадратные скобки с точкой внутри.
-const ICON_BRAKE = [0b10001, 0b10001, 0b10101, 0b10001, 0b10001];
-// Гудок (бибика): динамик со звуковыми волнами.
-const ICON_HORN = [0b00100, 0b01110, 0b11111, 0b01110, 0b00100];
-// Единая иконка света 5x5: одна «фара» показывает все 4 режима цикла
-// (0 ВЫКЛ — пустой корпус, 1 ДХО — центральная полоса,
-//  2 БЛИЖНИЙ — корпус с заливкой, 3 БЛ+ДХО — полностью залитая).
-// Битмапы синхронизированы с src/light_logic.h (lightIconRow) — покрыты юнит-тестами.
-const ICON_LIGHT_MODES = [
-  [0b00000, 0b00000, 0b00100, 0b00000, 0b00000],
-  [0b00000, 0b00100, 0b01110, 0b00100, 0b00000],
-  [0b00000, 0b01110, 0b11111, 0b01110, 0b00000],
-  [0b00100, 0b01110, 0b11111, 0b01110, 0b00100]
-];
-// Стрелки поворотников 5x5 — зеркальная пара (остриё в сторону поворота).
-// Синхронизированы с src/light_logic.h (turnArrowRow).
-const TURN_ARROW_5X5_L = [0b00100, 0b01100, 0b11111, 0b01100, 0b00100];
-const TURN_ARROW_5X5_R = [0b00100, 0b00110, 0b11111, 0b00110, 0b00100];
+// Битмапы иконок (ICON_BRAKE, ICON_HORN, ICON_LIGHT_MODES, TURN_ARROW_5X5_L/R,
+// ICON_PEDAL_FRAMES) вынесены в /matrix_graphics.js.
 function drawTurnArrow5x5(left, sr, sc) {
   const g = left ? TURN_ARROW_5X5_L : TURN_ARROW_5X5_R;
   for (let r = 0; r < 5; r++) {
@@ -773,16 +761,6 @@ function drawTurnArrow5x5(left, sr, sc) {
     }
   }
 }
-const ICON_PEDAL_FRAMES = [
-  [0b11000, 0b01000, 0b00100, 0b00010, 0b00011],
-  [0b00000, 0b11000, 0b01110, 0b00011, 0b00000],
-  [0b00000, 0b00000, 0b11111, 0b00000, 0b00000],
-  [0b00000, 0b00011, 0b01110, 0b11000, 0b00000],
-  [0b00011, 0b00010, 0b00100, 0b01000, 0b11000],
-  [0b00000, 0b00011, 0b01110, 0b11000, 0b00000],
-  [0b00000, 0b00000, 0b11111, 0b00000, 0b00000],
-  [0b00000, 0b11000, 0b01110, 0b00011, 0b00000]
-];
 
 function clearMatrix() {
   for (let r = 0; r < MATRIX_ROWS; r++) matrixGrid[r].fill(0);
@@ -834,6 +812,7 @@ function drawGear7x7(sr, sc) {
 // ================= BOOT ANIMATION: PAC-MAN INTRO =================
 let bootAnimationActive = false;
 let bootAnimationComplete = false;
+let bootAnimationTimeoutId = null;
 
 // Pac-Man 16x16 (БОЛЬШОЙ, рот вправо →, с глазом)
 const PACMAN_OPEN = [
@@ -1124,98 +1103,138 @@ function renderCanvas() {
   }
 }
 
+function removeBootSkipListeners() {
+  document.removeEventListener("keydown", handleBootSkipKeydown);
+  document.removeEventListener("pointerdown", handleBootSkipPointerdown, true);
+  document.removeEventListener("click", handleBootSkipClick, true);
+}
+
+function finishBootAnimation() {
+  if (bootAnimationComplete) return;
+
+  bootAnimationActive = false;
+  bootAnimationComplete = true;
+  if (bootAnimationTimeoutId !== null) {
+    clearTimeout(bootAnimationTimeoutId);
+    bootAnimationTimeoutId = null;
+  }
+  removeBootSkipListeners();
+
+  // Сначала полностью убираем кадр заставки, затем рисуем первый кадр эмулятора.
+  clearMatrix();
+  if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+  updateMatrixDisplay();
+}
+
+function scheduleBootFrame(cb, delay) {
+  bootAnimationTimeoutId = setTimeout(() => {
+    bootAnimationTimeoutId = null;
+    if (!bootAnimationActive || bootAnimationComplete) return;
+    cb();
+  }, delay);
+}
+
 function playBootAnimation() {
+  if (bootAnimationActive || bootAnimationComplete) return;
+
   bootAnimationActive = true;
   let frame = 0;
-  
+
   function nextFrame() {
+    if (!bootAnimationActive || bootAnimationComplete) return;
     clearMatrix();
-    
+
     switch(frame) {
       case 0: // Велосипедист справа
         drawBiker(4, 24, 0);
         renderCanvas();
-        setTimeout(nextFrame, 500);
+        scheduleBootFrame(nextFrame, 500);
         break;
-        
+
       case 1: // Велосипедист едет к центру влево
         drawBiker(4, 18, 1);
         renderCanvas();
-        setTimeout(nextFrame, 400);
+        scheduleBootFrame(nextFrame, 400);
         break;
-        
+
       case 2: // Велосипедист в центре, Pac-Man появляется слева (за краем, col -16)
         drawBiker(4, 12, 0);
         drawPacman(0, -10, true);
         renderCanvas();
-        setTimeout(nextFrame, 300);
+        scheduleBootFrame(nextFrame, 300);
         break;
-        
+
       case 3: // Pac-Man приближается слева (рот закрывается)
         drawBiker(4, 12, 1);
         drawPacman(0, 0, false);
         renderCanvas();
-        setTimeout(nextFrame, 200);
+        scheduleBootFrame(nextFrame, 200);
         break;
-        
+
       case 4: // Pac-Man съедает велосипедиста (рот открыт, велосипедист исчезает)
         drawPacman(0, 8, true);
         renderCanvas();
-        setTimeout(nextFrame, 300);
+        scheduleBootFrame(nextFrame, 300);
         break;
-        
+
       case 5: // Заливка экрана точками (Pac-Man в центре)
         drawPacman(0, 12, false);
         fillRandomDots(0.3);
         renderCanvas();
-        setTimeout(nextFrame, 400);
+        scheduleBootFrame(nextFrame, 400);
         break;
-        
+
       case 6: // Больше точек
         fillRandomDots(0.6);
         renderCanvas();
-        setTimeout(nextFrame, 300);
+        scheduleBootFrame(nextFrame, 300);
         break;
-        
+
       case 7: // Текст проявляется: "OPEN" (шрифт 4x5, вверху слева)
         clearMatrix();
         drawText4x5("OPEN", 0, 1);  // row 0 (самый верх), col 1 (сдвиг влево)
         renderCanvas();
-        setTimeout(nextFrame, 600);
+        scheduleBootFrame(nextFrame, 600);
         break;
-        
+
       case 8: // "BIKE" появляется (шрифт 7x10, ОГРОМНЫЙ внизу справа)
         drawText4x5("OPEN", 0, 1);
         drawText7x10("BIKE", 6, 2);  // row 6, col 2 (сдвиг вправо на 1)
         renderCanvas();
-        setTimeout(() => {
-          bootAnimationActive = false;
-          bootAnimationComplete = true;
-        }, 1000);
+        scheduleBootFrame(finishBootAnimation, 1000);
         break;
     }
-    
+
     frame++;
   }
-  
+
   nextFrame();
 }
 
-// Пропуск анимации по клику/тапу на матрицу (и таймаут-страховка: 5с максимум)
-if (canvas) {
-  canvas.addEventListener("pointerdown", () => {
-    if (bootAnimationActive) {
-      bootAnimationActive = false;
-      bootAnimationComplete = true;
-      updateMatrixDisplay();
-    }
-  });
+function handleBootSkipKeydown() {
+  finishBootAnimation();
 }
+
+function isBootScreenTarget(target) {
+  return target === canvas || (target instanceof Element && target.closest("button"));
+}
+
+function handleBootSkipPointerdown(event) {
+  if (isBootScreenTarget(event.target)) finishBootAnimation();
+}
+
+function handleBootSkipClick(event) {
+  if (isBootScreenTarget(event.target)) finishBootAnimation();
+}
+
+// Любая клавиша или экранная кнопка пропускает заставку. Клик/тап по матрице также сохранён.
+document.addEventListener("keydown", handleBootSkipKeydown, { once: true });
+document.addEventListener("pointerdown", handleBootSkipPointerdown, true);
+document.addEventListener("click", handleBootSkipClick, true);
+
+// Таймаут-страховка: заставка в любом случае завершается максимум через 5 секунд.
 setTimeout(() => {
-  if (bootAnimationActive && !bootAnimationComplete) {
-    bootAnimationActive = false;
-    bootAnimationComplete = true;
-  }
+  if (bootAnimationActive && !bootAnimationComplete) finishBootAnimation();
 }, 5000);
 
 function updateMatrixDisplay() {
@@ -1418,7 +1437,12 @@ function updateMatrixDisplay() {
   if (!effectiveBrake) {
     let baseMotorPct = calibOutPct;
     if (activeMode === "cruise" && activeCruiseLvl > 0 && simCruiseEngaged) {
-      let targetCruisePct = Math.min(100, activeCruiseLvl * (100 / Math.max(1, cruiseMax)));
+      // Цель уровня берём из конфигурации прошивки (cruiseLevelPercent[]),
+      // как это делает getCruiseTargetV() в core/cruise.cpp
+      let targetCruisePct = cruiseLevelPcts[activeCruiseLvl - 1];
+      if (targetCruisePct === undefined) {
+        targetCruisePct = Math.min(100, activeCruiseLvl * (100 / Math.max(1, cruiseMax)));
+      }
       baseMotorPct = Math.max(baseMotorPct, targetCruisePct);
     } else if (activeMode === "pas" && activePasLvl > 0 && effectivePedal) {
       let targetPasPct = Math.min(100, activePasLvl * (100 / Math.max(1, pasMax)));
@@ -1513,6 +1537,16 @@ function refreshHubData(forceSync = false) {
       hwLightMode = d.light_mode === undefined ? 1 : (d.light_mode | 0);
       renderSimLightButtons();
 
+      // Sync level limits from firmware config (NVS)
+      if (d.pas_cnt !== undefined) pasMax = d.pas_cnt | 0;
+      if (d.cruise_cnt !== undefined) cruiseMax = d.cruise_cnt | 0;
+
+      // Sync cruise FSM behaviour config from firmware (cruise.cpp defaults)
+      if (d.cruise_conf_thr !== undefined) cfgCruiseConfirmThrottle = !!d.cruise_conf_thr;
+      if (d.cruise_brk_mode !== undefined) cfgCruiseAfterBraking = d.cruise_brk_mode | 0;
+      if (d.cruise_thr_mode !== undefined) cfgCruiseAfterThrottle = d.cruise_thr_mode | 0;
+      if (Array.isArray(d.cruise_pcts)) cruiseLevelPcts = d.cruise_pcts;
+
       // Для эмулятора мы не перезаписываем слайдер (simGasPct) данными физической
       // ручки, чтобы виртуальный интерфейс работал независимо (анимация и логика
       // UI продолжают реагировать на simGasPct).
@@ -1522,6 +1556,8 @@ function refreshHubData(forceSync = false) {
       updateEffectiveStates();
 
       // State machine for cruise confirmation & engagement in UI
+      // Логика 1:1 повторяет FSM в src/core/throttle.cpp (строки ~134–177):
+      // те же условия, те же режимы 0/1/2, та же семантика cruiseReleaseSeen.
       if (activeMode === "cruise" && activeCruiseLvl > 0) {
         if (effectiveBrake) {
           if (simCruiseEngaged || !simCruisePendingResume) {
@@ -1529,11 +1565,13 @@ function refreshHubData(forceSync = false) {
               simCruiseEngaged = false;
               simCruisePendingResume = false;
             } else if (cfgCruiseAfterBraking === 1) {
+              // armCruisePending(true, throttlePct)
               simCruiseEngaged = false;
               simCruisePendingResume = true;
               simCruiseConfirmRequired = true;
               simCruiseReleaseSeen = (simGasPct <= 10);
             } else if (cfgCruiseAfterBraking === 2) {
+              // armCruisePending(false, throttlePct)
               simCruiseEngaged = false;
               simCruisePendingResume = true;
               simCruiseConfirmRequired = false;
@@ -1545,11 +1583,13 @@ function refreshHubData(forceSync = false) {
               simCruiseEngaged = false;
               simCruisePendingResume = false;
             } else if (cfgCruiseAfterThrottle === 1) {
+              // armCruisePending(true, throttlePct)
               simCruiseEngaged = false;
               simCruisePendingResume = true;
               simCruiseConfirmRequired = true;
-              simCruiseReleaseSeen = false;
+              simCruiseReleaseSeen = (simGasPct <= 10);
             } else if (cfgCruiseAfterThrottle === 2) {
+              // armCruisePending(false, throttlePct)
               simCruiseEngaged = false;
               simCruisePendingResume = true;
               simCruiseConfirmRequired = false;
@@ -1561,7 +1601,6 @@ function refreshHubData(forceSync = false) {
               } else if (simCruiseReleaseSeen && simGasPct > 10) {
                 simCruiseEngaged = true;
                 simCruisePendingResume = false;
-                simCruiseConfirmRequired = false;
               }
             } else {
               if (simGasPct <= 10) {
@@ -1578,6 +1617,8 @@ function refreshHubData(forceSync = false) {
       currentPasLvl = d.pas_lvl || 0;
       currentCruiseLvl = d.cruise_lvl || 0;
       currentCruiseEngaged = d.cruise_engaged || false;
+      let currentCruisePending = d.cruise_pending || false;
+      let currentCruiseConfReq = d.cruise_conf_req || false;
 
       let serverMode = currentMode;
       let serverPasLvl = currentPasLvl;
@@ -1589,6 +1630,18 @@ function refreshHubData(forceSync = false) {
           simCruiseEngaged = true;
           simCruisePendingResume = false;
           simCruiseConfirmRequired = false;
+        } else if (currentCruisePending) {
+          // Прошивка в pending-режиме: зеркалим её FSM-состояние напрямую
+          // вместо локального вывода — устраняет рассинхрон после тормоза/газа.
+          simCruiseEngaged = false;
+          simCruisePendingResume = true;
+          simCruiseConfirmRequired = currentCruiseConfReq;
+          simCruiseReleaseSeen = (simGasPct <= 10);
+        } else if (simCruiseEngaged && !simCruisePendingResume) {
+          // Прошивка сообщает: круиз активен, но тяга снята (pending),
+          // при этом локальная FSM об этом не знает — синхронизируемся.
+          simCruiseEngaged = false;
+          simCruisePendingResume = true;
         }
       }
 
@@ -1867,13 +1920,16 @@ function applyJoystickDraft(event) {
 
   if (targetMode === "cruise" && targetLvl > 0) {
     if (cfgCruiseConfirmThrottle) {
+      // Точно как в handleApiJoystickApply: armCruisePending(true, 0.0f)
       simCruiseEngaged = false;
       simCruisePendingResume = true;
       simCruiseConfirmRequired = true;
-      simCruiseReleaseSeen = (simGasPct <= 10);
+      simCruiseReleaseSeen = true; // прошивка вызывает armCruisePending(true, 0.0) → газ = 0
     } else {
-      simCruiseEngaged = false;
+      // Точно как в handleApiJoystickApply: cruiseEngaged = true
+      simCruiseEngaged = true;
       simCruisePendingResume = false;
+      simCruiseConfirmRequired = false;
     }
   }
 

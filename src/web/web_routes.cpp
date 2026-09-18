@@ -77,6 +77,7 @@ void initWebRoutes(WebServer& server) {
   // Настройки GPIO (pins)
   server.on("/settings/pins", handlePinsPage);
   server.on("/settings/pins/save", HTTP_POST, handlePinsSave);
+  server.on("/settings/pins/reset", HTTP_POST, handlePinsReset);
   server.on("/settings/pins/row/save", HTTP_POST, handlePinRowSave);
   server.on("/settings/pins/custom/save", HTTP_POST, handleCustomPinSave);
   server.on("/settings/pins/custom/delete", HTTP_POST, handleCustomPinDelete);
@@ -91,7 +92,9 @@ void initWebRoutes(WebServer& server) {
   // Системные страницы
   server.on("/system", handleSystemPage);
   server.on("/system/export", handleSettingsExport);
-  server.on("/system/import", HTTP_POST, handleSettingsImport);
+  // Импорт принимает и multipart-загрузку файла (handleSettingsUpload), и обычный
+  // urlencoded POST с полем settingsFile (вставка JSON вручную / curl).
+  server.on("/system/import", HTTP_POST, handleSettingsImport, handleSettingsUpload);
   server.on("/system/factory-reset", HTTP_POST, handleSystemFactoryReset);
   
   // Телеметрия и статус
