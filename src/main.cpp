@@ -25,6 +25,7 @@
 #include "system/hardware_config.h" // GPIO утилиты и конфигурация пинов
 #include "system/events_engine.h"   // Событийный движок (триггеры, правила, действия)
 #include "system/peripherals.h"     // Зуммер, гудок, временные иконки дисплея, виртуальные кнопки
+#include "system/joystick.h"        // Физический джойстик (переключение режимов, VRx/VRy/SW)
 #include "web/web_routes.h"   // Регистрация HTTP-маршрутов
 #include "web/web_handlers_telemetry.h" // HTTP-телеметрия и захват шины
 #include "web/web_handlers_emulation.h" // HTTP-эмуляция и API управления
@@ -318,6 +319,9 @@ void setup() {
   pinMode(HORN_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
 
+  // Инициализация физического джойстика (переключение режимов: VRx/VRy/SW)
+  joystickInit();
+
   // Инициализация модуля освещения (фара, ДХО, поворотники)
   lightsInit(HEADLIGHT_PIN, DRL_PIN);
   lightsSetTurnPins(TURN_LEFT_PIN, TURN_RIGHT_PIN);
@@ -391,6 +395,7 @@ void criticalControlTask(void *pvParameters) {
     // 2. Вспомогательное управление освещением и звуком
     secStart = micros();
     updateVirtualButtons();
+    updateJoystick(); // Физический джойстик: переключение режимов (аналог /api/joystick/apply)
     // УДАЛЕНО: updateLightButtons() — кнопки теперь через систему событий
     cpuUsLight += micros() - secStart;
 
