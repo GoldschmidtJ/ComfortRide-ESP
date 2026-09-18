@@ -91,8 +91,8 @@ void throttleSettingsLoad() {
   throttleInMaxV = prefs.getFloat("inMaxV", 4.1f);
   throttleOutMinV = prefs.getFloat("outMinV", 1.1f);
   throttleOutMaxV = prefs.getFloat("outMaxV", 4.1f);
-  throttleInputDividerRatio = prefs.getFloat("divRatio", 24.0f / 34.0f);
-  throttleOutputGain = prefs.getFloat("gain", 1.27f);
+  throttleInputDividerRatio = prefs.getFloat("divRatio", 20.0f / 30.0f);
+  throttleOutputGain = prefs.getFloat("gain", 1.33f);
   throttleExtendedRangeAllowed = prefs.getInt("extRange", 0) != 0;
   throttleSoftStartEnabled = prefs.getInt("ssEn", 0) != 0;
   throttleSoftStopEnabled = prefs.getInt("spEn", 0) != 0;
