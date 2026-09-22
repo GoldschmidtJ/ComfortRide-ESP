@@ -29,10 +29,15 @@ jobs:
         run: pip install platformio
 
       - name: Build firmware
-        run: pio run
+        run: |
+          set -o pipefail
+          pio run -e esp32dev -v 2>&1 | tee build.log
+
+      - name: Run native tests
+        run: pio test -e native
 
       - name: Check for build warnings in src/
         run: |
-          if grep -iE 'warning' .pio/build/esp32dev/*.log 2>/dev/null; then
+          if grep -iE 'warning' build.log; then
             echo "::warning::Обнаружены предупреждения компиляции"
           fi

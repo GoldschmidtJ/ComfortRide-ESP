@@ -1,4 +1,14 @@
 #include "core/throttle.h"
+#include "system/events_engine.h" // serviceModeActive, serviceThrottleLimitPct
+#include "core/pas.h"             // getPasTargetV(), applyPasSmoothing(), pasConfirmedActive
+#include "core/cruise.h"          // getCruiseTargetV(), applyCruiseSmoothing()
+#include "system/inputs.h"        // isBrakePressed()
+#include "system/debug_capture.h" // updateDebugBuffer() (P3)
+
+// ================= Флаг заводского сброса =================
+// Пишется веб-обработчиком factory reset (web_handlers_system.cpp),
+// читается в контуре управления (updateThrottle) для принудительного нуля.
+bool factoryResetInProgress = false;
 
 // ================= Константы =================
 const float HW_MAX_VOLTAGE = 3.3f; // Максимальное напряжение ESP32
@@ -20,32 +30,13 @@ unsigned long throttleSoftStopMs = 500;
 float throttleSmoothOutV = 0;
 unsigned long throttleSmoothLastMs = 0;
 
-// ================= Внешние зависимости =================
-// Объявления для внешних функций и переменных из main.cpp
-extern bool isBrakePressed();
-extern float getPasTargetV();
-extern float applyPasSmoothing(float targetV);
-extern float getCruiseTargetV();
-extern float applyCruiseSmoothing(float targetV);
-extern void updateDebugBuffer(float, float);
-extern float pasSmoothOutV;
-extern float cruiseSmoothOutV;
-extern float hwThrottleInV;
-extern float hwThrottleOutV;
-extern float hwThrottlePct;
-extern float hwMotorOutPct;
-extern bool hwBrakeActive;
-extern bool hwPasActive;
-extern bool pasConfirmedActive;
-extern bool cruiseEnabled;
-extern bool cruiseEngaged;
-extern bool cruisePendingResume;
-extern bool cruiseConfirmRequired;
-extern bool cruiseReleaseSeen;
-extern int cruiseCurrentLevel;
-extern int cruiseAfterBrakingMode;
-extern int cruiseAfterThrottleMode;
-extern void armCruisePending(bool confirmRequired, float throttlePct);
+// ================= Real-time телеметрия (определения) =================
+volatile float hwThrottleInV = 0.0f;
+volatile float hwThrottleOutV = 0.0f;
+volatile float hwThrottlePct = 0.0f;
+volatile float hwMotorOutPct = 0.0f;
+volatile bool hwBrakeActive = false;
+volatile bool hwPasActive = false;
 
 // ================= Калибровка напряжения =================
 float calibrateThrottleV(float rawV) {

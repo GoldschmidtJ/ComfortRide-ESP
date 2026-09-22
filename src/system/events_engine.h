@@ -3,8 +3,10 @@
 
 #include <Arduino.h>
 
-#define EVENT_MAX_RULES 8
-#define EVENT_MAX_ACTIONS 3
+// ================= Сервисный режим =================
+// Определение и управление — в events_engine.cpp (serviceModeApply()).
+extern bool serviceModeActive;
+extern int serviceThrottleLimitPct;
 
 // ================= Event Triggers =================
 enum EventTrigger : uint8_t {

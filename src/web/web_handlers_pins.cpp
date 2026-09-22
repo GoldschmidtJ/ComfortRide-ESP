@@ -1,46 +1,13 @@
 #include "web/web_handlers_pins.h"
 #include <WebServer.h>
+
+#include "web/param_utils.h"   // getArgInt/getArgFloat (семантика toInt/toFloat)
 #include "system/hardware_config.h"
-
-extern WebServer server;
-
-// Полные определения структур из main.cpp
-
-
-// Pin configuration
-extern PinConfig pinConfig;
-extern const PinConfig PIN_CONFIG_DEFAULTS;
-extern const PinRole pinRoles[PIN_ROLE_COUNT];
-extern char pinRoleNames[PIN_ROLE_COUNT][USER_LABEL_SIZE];
-extern CustomPinRole customPins[CUSTOM_PIN_MAX];
-extern bool pinConfigCustom;
-
-// Pin helper functions (from main.cpp)
-extern bool gpioExists(int g);
-extern bool gpioHasAdc(int g);
-extern bool gpioIsAdc2(int g);
-extern bool gpioHasDac(int g);
-extern bool gpioInputOnly(int g);
-extern bool gpioIsStrap(int g);
-extern bool gpioIsUart(int g);
-extern bool gpioIsFlash(int g);
-
-// Helper functions
-extern int16_t& pinField(PinConfig &cfg, int role);
-extern String pinRoleName(int role);
-extern bool normalizeUserLabel(String &s);
-extern void setUserLabel(char *dest, const String &value);
-
-// Functions
-extern void pinSettingsSave();
-extern void reapplyPinConfig();
-extern String validatePinConfig(PinConfig &cfg, String *warnings);
-extern String getTopBarCss();
-extern String getSettingsCss();
-extern String getTopBarHtml();
-extern String getBackMenuHtml();
-extern String getTopBarJs();
-extern String htmlEscape(const String &value);
+#include "web/web_routes.h"   // server
+#include "system/storage.h"  // pinSettingsSave
+#include "utils/utils.h"     // normalizeUserLabel, setUserLabel, htmlEscape
+#include "web/web_ui.h"      // getTopBarCss/getSettingsCss/getTopBarHtml/getBackMenuHtml
+#include "web/html_pages.h"  // getTopBarJs
 
 // ================= Веб: конструктор распиновки =================
 String gpioCapabilityText(int g) {
@@ -301,10 +268,10 @@ String customPinRowHtml(int i, const CustomPinRole &c) {
 
 void handlePinRowSave() {
   if (!server.hasArg("slot")) { server.send(400, "text/plain", "Нет параметра slot"); return; }
-  int slot = server.arg("slot").toInt();
+  int slot = getArgInt(server, "slot");
   if (slot < 0 || slot >= PIN_ROLE_COUNT) { server.send(400, "text/plain", "Неверный слот"); return; }
   String name = server.arg("nm");
-  int g = server.hasArg("gpio") ? server.arg("gpio").toInt() : pinField(pinConfig, slot);
+  int g = server.hasArg("gpio") ? getArgInt(server, "gpio") : pinField(pinConfig, slot);
   if (!normalizeUserLabel(name)) { server.send(400, "text/plain", "Название: от 1 до 64 символов, без < и >"); return; }
   for (int j = 0; j < PIN_ROLE_COUNT; j++) {
     if (j == slot) continue;
@@ -328,10 +295,10 @@ void handlePinRowSave() {
 
 void handleCustomPinSave() {
   bool adding = !server.hasArg("slot");
-  int slot = adding ? -1 : server.arg("slot").toInt();
+  int slot = adding ? -1 : getArgInt(server, "slot");
   String name = server.arg("nm");
-  int gpio = server.hasArg("gpio") ? server.arg("gpio").toInt() : -1;
-  int mode = server.hasArg("mode") ? server.arg("mode").toInt() : -1;
+  int gpio = server.hasArg("gpio") ? getArgInt(server, "gpio") : -1;
+  int mode = server.hasArg("mode") ? getArgInt(server, "mode") : -1;
   if (adding) {
     int freeSlot = -1;
     for (int i = 0; i < CUSTOM_PIN_MAX; i++) if (!customPins[i].used) { freeSlot = i; break; }
@@ -377,7 +344,7 @@ void handleCustomPinSave() {
 }
 
 void handleCustomPinDelete() {
-  int slot = server.hasArg("slot") ? server.arg("slot").toInt() : -1;
+  int slot = server.hasArg("slot") ? getArgInt(server, "slot") : -1;
   if (slot < 0 || slot >= CUSTOM_PIN_MAX) { server.send(400, "text/plain", "Неверный слот"); return; }
   if (!customPins[slot].used) { server.send(400, "text/plain", "Слот не занят"); return; }
   customPins[slot] = CustomPinRole();
@@ -390,7 +357,7 @@ void handlePinsSave() {
   char nextNames[PIN_ROLE_COUNT][USER_LABEL_SIZE] = {};
   String errors = "";
   for (int i = 0; i < PIN_ROLE_COUNT; i++) {
-    if (server.hasArg(pinRoles[i].key)) pinField(next, i) = (int16_t)server.arg(pinRoles[i].key).toInt();
+    if (server.hasArg(pinRoles[i].key)) pinField(next, i) = (int16_t)getArgInt(server, pinRoles[i].key);
     String name = server.arg("nm" + String(i));
     if (!normalizeUserLabel(name)) errors += "Название пина " + String(i + 1) + ": от 1 до 64 символов, без < и >\n";
     else {

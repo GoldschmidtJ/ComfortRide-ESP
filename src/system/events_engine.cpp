@@ -3,12 +3,15 @@
 #include "core/pas.h"
 #include "core/cruise.h"
 #include "system/inputs.h"
+#include "system/hardware_config.h" // BTN_*_PIN, PAS_BUTTON_PIN (рабочие GPIO)
 #include <Arduino.h>
 
+// ================= Сервисный режим =================
+// Определения здесь: управляет serviceModeApply(), потребители — pas/throttle/web.
+bool serviceModeActive = false;
+int serviceThrottleLimitPct = 30; // % от рабочего диапазона выхода газа
+
 // ================= External Dependencies =================
-// Service mode
-extern bool serviceModeActive;
-extern int serviceThrottleLimitPct;
 
 // Forward declarations for peripherals (buzzer, horn, display)
 void buzzerClick(unsigned long durationMs);
@@ -180,7 +183,6 @@ void updateEventEngine() {
   static unsigned long down = 0;
   
   // Button pins array (updated each cycle to reflect current pin config)
-  extern int BTN_HEADLIGHT_PIN, BTN_TURN_LEFT_PIN, BTN_TURN_RIGHT_PIN, BTN_HORN_PIN, PAS_BUTTON_PIN;
   const int btnPins[5] = {BTN_HEADLIGHT_PIN, BTN_TURN_LEFT_PIN, BTN_TURN_RIGHT_PIN, BTN_HORN_PIN, PAS_BUTTON_PIN};
   
   static int btnLast[5] = {HIGH, HIGH, HIGH, HIGH, HIGH};

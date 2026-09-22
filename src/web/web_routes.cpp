@@ -1,10 +1,15 @@
 #include "web/web_routes.h"
 #include "web/web_handlers_telemetry.h"
+
+// ================= Экземпляр веб-сервера =================
+WebServer server(80);
 #include "web/web_handlers_emulation.h"
 #include "web/web_handlers_settings.h"
 #include "web/web_handlers_pins.h"
 #include "web/web_handlers_events.h"
 #include "web/web_handlers_system.h"
+#include "web/web_handlers_backup.h" // Экспорт/импорт файла настроек (JSON)
+#include "web/web_handlers_update.h" // Прошивка по воздуху (OTA)
 #include <WebServer.h>
 #include "web/static_resources.h"
 

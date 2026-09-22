@@ -23,12 +23,19 @@ extern unsigned long throttleSoftStopMs;
 extern float throttleSmoothOutV;
 extern unsigned long throttleSmoothLastMs;
 
+// ================= Real-time телеметрия =================
+// Записывается в updateThrottle() (throttle.cpp), читается веб-телеметрией.
+extern volatile float hwThrottleInV;
+extern volatile float hwThrottleOutV;
+extern volatile float hwThrottlePct;
+extern volatile float hwMotorOutPct;
+extern volatile bool hwBrakeActive;
+extern volatile bool hwPasActive;
+
 // ================= Зависимости (из main.cpp) =================
 extern int THROTTLE_ADC_PIN;
 extern int THROTTLE_DAC_PIN;
-extern bool serviceModeActive;
-extern int serviceThrottleLimitPct;
-extern volatile bool factoryResetInProgress;
+extern bool factoryResetInProgress;
 
 // ================= API управления =================
 

@@ -1,28 +1,26 @@
 #include "system/network.h"
+#include "system/storage.h"
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <DNSServer.h>
 
-// ================= Внешние переменные из main.cpp =================
 
-// WiFi настройки из main.cpp
-extern const char* ssid;
-extern const char* password;
-extern const char* MDNS_HOST;
-extern const IPAddress staticSTAIP;
-extern const IPAddress staticSTAGateway;
-extern const IPAddress staticSTASubnet;
-extern const IPAddress staticSTADNS;
+// ================= Конфигурация WiFi =================
+// ssid/password — дефолт "из коробки". Если через веб выбрать другую сеть,
+// она сохранится в NVS (storage.cpp) и будет использоваться вместо дефолтной.
+const char* ssid = "Donut";
+const char* password = "doughnut";
+const char* MDNS_HOST = "openbike";
 
-// DNS для Captive Portal
-extern DNSServer dnsServer;
-extern const byte DNS_PORT;
+// ================= Captive Portal DNS =================
+DNSServer dnsServer;
+const byte DNS_PORT = 53;
 
-// Сохранённые учётные данные (из storage)
-extern String storedSsid;
-extern String storedPass;
-extern String storedApSsid;
-extern String storedApPass;
+// Статический IP для надежного подключения к точке доступа телефона (Android)
+const IPAddress staticSTAIP(192, 168, 43, 88);
+const IPAddress staticSTAGateway(192, 168, 43, 1);
+const IPAddress staticSTASubnet(255, 255, 255, 0);
+const IPAddress staticSTADNS(192, 168, 43, 1);
 
 // ================= Внутренние переменные модуля =================
 

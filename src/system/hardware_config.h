@@ -69,6 +69,24 @@ extern bool pinConfigCustom;
 extern char pinRoleNames[PIN_ROLE_COUNT][USER_LABEL_SIZE];
 extern CustomPinRole customPins[CUSTOM_PIN_MAX];
 
+// ================= Рабочие пины GPIO =================
+// Определения — в hardware_config.cpp, рабочие значения задаёт applyPinConfig().
+extern int THROTTLE_ADC_PIN;
+extern int THROTTLE_DAC_PIN;
+extern int BRAKE_PIN;
+extern int PAS_SENSOR_PIN;
+extern int PAS_BUTTON_PIN;
+extern int HEADLIGHT_PIN;
+extern int DRL_PIN;
+extern int TURN_LEFT_PIN;
+extern int TURN_RIGHT_PIN;
+extern int HORN_PIN;
+extern int BUZZER_PIN;
+extern int BTN_HEADLIGHT_PIN;
+extern int BTN_TURN_LEFT_PIN;
+extern int BTN_TURN_RIGHT_PIN;
+extern int BTN_HORN_PIN;
+
 // Functions
 String customPinModeName(uint8_t mode);
 String pinRoleName(int i);

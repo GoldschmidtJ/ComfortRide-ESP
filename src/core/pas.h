@@ -45,12 +45,14 @@ extern unsigned long pasSmoothLastMs;
 extern int PAS_SENSOR_PIN;
 extern float throttleOutMinV;
 extern float throttleOutMaxV;
-extern bool serviceModeActive;
 
 // ================= API управления =================
 
 // Инициализация прерывания PAS
 void pasInit(int sensorPin);
+
+// Обработка кнопки переключения уровня PAS (вызывается из main.cpp)
+void handlePasButtonPress();
 
 // Обработчик прерывания (IRAM)
 void IRAM_ATTR onPasPulse();

@@ -1,4 +1,7 @@
 #include "core/pas.h"
+#include "system/events_engine.h" // serviceModeActive, serviceThrottleLimitPct
+#include "system/inputs.h"        // updatePasButton()
+#include "core/cruise.h"          // cruiseEnabled, cruiseCurrentLevel, ...
 
 // ================= Константы =================
 const int PAS_MAX_LEVELS = 20;
@@ -175,4 +178,19 @@ float getPasTargetV() {
   float outMin = throttleOutMinV;
   float outMax = (throttleOutMaxV > outMin + 0.01f) ? throttleOutMaxV : (outMin + 0.01f);
   return outMin + (pct / 100.0f) * (outMax - outMin);
+}
+
+// ================= Обработка кнопки переключения уровня PAS =================
+void handlePasButtonPress() {
+  if (updatePasButton()) {
+    pasCurrentLevel = (pasCurrentLevel + 1) % (pasLevelsCount + 1);
+    pasEnabled = (pasCurrentLevel > 0);
+    if (pasEnabled) {
+      cruiseEnabled = false; // Отключаем круиз при физическом переключении PAS
+      cruiseCurrentLevel = 0;
+      cruiseEngaged = false;
+      cruisePendingResume = false;
+    }
+    Serial.printf("PAS уровень: %d/%d\n", pasCurrentLevel, pasLevelsCount);
+  }
 }

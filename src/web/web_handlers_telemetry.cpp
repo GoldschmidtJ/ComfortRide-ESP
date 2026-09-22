@@ -1,26 +1,22 @@
 #include "web/web_handlers_telemetry.h"
+#include "system/debug_capture.h" // DEBUG_BUFFER_SIZE, debugBuffer, busCapture* (P3)
 #include "web/html_pages.h"
+#include "core/pas.h"
+#include "core/cruise.h"
+#include "core/lights.h"
 #include <WiFi.h>
 #include <driver/gpio.h>
 #include <math.h>
-#define FIRMWARE_VERSION "0.3.1"
-extern WebServer server; extern const char* MDNS_HOST; extern String storedApSsid;
-extern int cpuUsagePercent, cpuPasPct, cpuPasBtnPct, cpuThrottlePct, cpuLightPct, cpuSoundPct;
-extern bool pasEnabled, serviceModeActive, headlightOn, drlOn, turnLeftActive, turnRightActive, turnBlinkState;
-extern int serviceThrottleLimitPct, lightCycleMode, pasCurrentLevel, pasLevelsCount, cruiseCurrentLevel, cruiseLevelsCount;
-extern bool cruiseEnabled, cruiseEngaged;
-extern bool cruiseConfirmThrottleAfterStart;
-extern bool cruisePendingResume, cruiseConfirmRequired;
-extern int cruiseAfterBrakingMode, cruiseAfterThrottleMode;
-extern float cruiseLevelPercent[100]; // CRUISE_MAX_LEVELS
-extern volatile float hwThrottlePct, hwThrottleInV, hwThrottleOutV, hwMotorOutPct; extern volatile bool hwBrakeActive, hwPasActive;
-extern const int DEBUG_BUFFER_SIZE;
-extern DebugSample debugBuffer[]; extern int debugBufferHead; extern portMUX_TYPE debugBufferMux;
-extern const int BUS_CAPTURE_PIN;
-extern const uint32_t BUS_CAPTURE_CAPACITY;
-extern BusEdge busCaptureSnapshot[]; extern volatile uint32_t busCaptureCount, busCaptureTotal, busCaptureOverwritten, busCaptureStartedUs, busCaptureLastUs; extern volatile bool busCaptureRunning; extern portMUX_TYPE busCaptureMux;
-extern bool busCapturePinBusy(String*); extern void clearBusCapture(); extern uint32_t snapshotBusCapture(uint32_t&,uint32_t&,uint32_t&,uint32_t&,bool&); extern void IRAM_ATTR onBusCaptureEdge(); extern String jsonEscape(const String&);
-
+#include "system/version.h"             // FIRMWARE_VERSION — единая точка версии
+#include "web/web_routes.h"
+#include "core/throttle.h" // hwThrottle*, serviceThrottleLimitPct, serviceModeActive
+#include "system/events_engine.h" // serviceModeActive, serviceThrottleLimitPct
+#include "core/throttle.h" // hwThrottle*, serviceThrottleLimitPct
+#include "system/cpu_profile.h" // cpuUsagePercent, cpuPasPct, ...
+#include "system/network.h"     // MDNS_HOST
+#include "system/storage.h"     // storedApSsid
+#include "utils/utils.h"        // jsonEscape
+// busCapture*/clearBusCapture/snapshotBusCapture/onBusCaptureEdge — из system/debug_capture.h (P3)
 void handleDebugPage() { sendDebugPage(server); }
 
 void handleSystemStatus() {

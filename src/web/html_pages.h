@@ -1,10 +1,13 @@
 #ifndef HTML_PAGES_H
 #define HTML_PAGES_H
-#include <Arduino.h>
-class WebServer;
-String getTopBarJs();
-String getUpdatePageHtml();
-void sendDebugPage(WebServer &server);
-void sendHubPage(WebServer &server);
-void sendEmulationPage(WebServer &server);
-#endif
+
+// Зонтичный заголовок: страницы HTML разнесены по тематическим файлам
+// (рефакторинг C). Включайте конкретный заголовок или этот — как раньше.
+
+#include "web/html_pages_topbar.h"    // getTopBarJs
+#include "web/html_pages_update.h"    // getUpdatePageHtml
+#include "web/html_pages_debug.h"     // sendDebugPage
+#include "web/html_pages_hub.h"       // sendHubPage
+#include "web/html_pages_emulation.h" // sendEmulationPage
+
+#endif // HTML_PAGES_H

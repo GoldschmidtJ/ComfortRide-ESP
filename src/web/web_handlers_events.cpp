@@ -1,68 +1,12 @@
 #include "web/web_handlers_events.h"
 #include <WebServer.h>
-
-extern WebServer server;
-
-// Event structures and constants from main.cpp
-#define USER_LABEL_SIZE 65
-#define EVENT_MAX_RULES 8
-#define EVENT_MAX_ACTIONS 3
-#define EV_TRIGGER_MAX 14
-
-enum EventTrigger { EV_BRAKE_PRESS=1, EV_BRAKE_RELEASE, EV_BRAKE_HOLD, EV_BTN_HEADLIGHT, EV_BTN_TURN_L, EV_BTN_TURN_R, EV_BTN_HORN, EV_BTN_PAS, EV_PAS_LEVEL, EV_PAS_ON, EV_PAS_OFF, EV_CRUISE_ON, EV_CRUISE_OFF, EV_BOOT };
-enum EventCondition { EV_NONE=0, EV_PRESS_COUNT, EV_HOLD_MS };
-enum EventAction { EV_NO_ACTION=0, EV_SERVICE_TOGGLE, EV_SERVICE_ON, EV_SERVICE_OFF, EV_LIGHT_TOGGLE, EV_DRL_TOGGLE, EV_TURN_L_TOGGLE, EV_TURN_R_TOGGLE, EV_HORN_BEEP, EV_BUZZER_BEEP, EV_PAS_SET_LEVEL, EV_PAS_TOGGLE, EV_LIGHT_BLINK, EV_DRL_BLINK, EV_LIGHT_SET_MODE, EV_LIGHT_CYCLE_UP, EV_DISPLAY_TURN_L, EV_DISPLAY_TURN_R, EV_DISPLAY_LIGHT, EV_DISPLAY_HORN, EV_DISPLAY_BRAKE };
-#define EV_ACTION_MAX EV_DISPLAY_BRAKE
-
-struct EventRule { 
-  uint8_t enabled, trigger, condition, priority; 
-  uint16_t count; 
-  uint32_t intervalMs; 
-  uint8_t actions[EVENT_MAX_ACTIONS]; 
-  int16_t actionValues[EVENT_MAX_ACTIONS]; 
-};
-
-// Event configuration
-extern EventRule eventRules[EVENT_MAX_RULES];
-extern char eventRuleNames[EVENT_MAX_RULES][USER_LABEL_SIZE];
-
-// Event runtime state
-struct EventRuntime {
-  uint16_t count;
-  unsigned long lastPress;
-  unsigned long lastFire;
-  bool holdFired;
-};
-extern EventRuntime eventRuntime[EVENT_MAX_RULES];
-
-// Event log
-struct EventLog { 
-  unsigned long at; 
-  uint8_t rule; 
-};
-extern EventLog eventLog[10];
-extern int eventLogHead;
-extern int eventLogCount;
-
-// PAS configuration
-extern int pasLevelsCount;
-
-// Functions
-extern bool normalizeUserLabel(String &s);
-extern bool eventSettingsSave();
-extern void eventSettingsReset();
-extern String eventRuleName(int slot);
-extern String validateEventRule(const EventRule &r, String *warnings);
-extern bool isSystemRule(int slot);
-extern void enforceSystemRules(EventRule &r, int slot, bool forceActionsUpdate = false);
-extern void setUserLabel(char *dest, const String &value);
-extern String getTopBarCss();
-extern String getSettingsCss();
-extern String getTopBarHtml();
-extern String getBackMenuHtml();
-extern String getTopBarJs();
-extern String htmlEscape(const String &value);
-extern String jsonEscape(const String &value);
+#include "web/web_routes.h"   // server
+#include "system/events_engine.h" // EventRule/EventRuntime/EventLog, EVENT_MAX_RULES и др. — единое определение
+#include "core/pas.h"             // pasLevelsCount
+#include "system/storage.h"  // eventSettingsSave/eventSettingsReset
+#include "utils/utils.h"     // normalizeUserLabel, setUserLabel, htmlEscape, jsonEscape
+#include "web/web_ui.h"      // getTopBarCss/getSettingsCss/getTopBarHtml/getBackMenuHtml
+#include "web/html_pages.h"  // getTopBarJs
 
 // ================= Веб: конструктор событий =================
 void handleEventsPage() {

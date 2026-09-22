@@ -1,14 +1,6 @@
 #include "system/peripherals.h"
 #include "system/hardware_config.h"
 
-// Рабочие GPIO объявлены в main.cpp и перенастраиваются через hardware_config.
-extern int HORN_PIN;
-extern int BUZZER_PIN;
-extern int BTN_HORN_PIN;
-extern int BTN_HEADLIGHT_PIN;
-extern int BTN_TURN_LEFT_PIN;
-extern int BTN_TURN_RIGHT_PIN;
-
 // ================= Buzzer =================
 bool buzzerOn = false;
 unsigned long buzzerOffAtMs = 0;

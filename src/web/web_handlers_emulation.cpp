@@ -1,19 +1,13 @@
 #include "web/web_handlers_emulation.h"
+#include "web/html_pages.h" // sendEmulationPage
 #include "system/peripherals.h"
-#include "web/html_pages.h"
+#include "core/pas.h"
+#include "core/cruise.h"
 #include <WebServer.h>
 
-extern WebServer server;
-extern bool pasEnabled;
-extern int pasCurrentLevel;
-extern int pasLevelsCount;
-extern bool cruiseEnabled;
-extern int cruiseCurrentLevel;
-extern int cruiseLevelsCount;
-extern bool cruiseEngaged;
-extern bool cruisePendingResume;
-extern bool cruiseConfirmThrottleAfterStart;
-extern void armCruisePending(bool engaged, float lastThrottle);
+#include "web/param_utils.h"   // getArgInt/getArgFloat (семантика toInt/toFloat)
+
+#include "web/web_routes.h"
 
 void handleEmulationPage() { sendEmulationPage(server); }
 
@@ -43,7 +37,7 @@ void handleApiJoystickApply() {
     return;
   }
   String mode = server.arg("mode");
-  int level = server.hasArg("level") ? server.arg("level").toInt() : 0;
+  int level = server.hasArg("level") ? getArgInt(server, "level") : 0;
 
   if (mode == "pas") {
     if (level >= 0 && level <= pasLevelsCount) {
@@ -91,7 +85,7 @@ void handleApiJoystickApply() {
   server.send(400, "text/plain", "Bad Request");
 }void handleApiPasSetLevel() {
   if (server.hasArg("level")) {
-    int newLevel = server.arg("level").toInt();
+    int newLevel = getArgInt(server, "level");
     // Уровень 0 means PAS off, levels 1..pasLevelsCount are valid
     if (newLevel >= 0 && newLevel <= pasLevelsCount) {
       pasCurrentLevel = newLevel;

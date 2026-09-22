@@ -4,22 +4,23 @@
 #include "core/throttle.h"
 #include "system/inputs.h"
 
-// ================= External pin variables =================
-extern int THROTTLE_ADC_PIN;
-extern int THROTTLE_DAC_PIN;
-extern int BRAKE_PIN;
-extern int PAS_SENSOR_PIN;
-extern int PAS_BUTTON_PIN;
-extern int HEADLIGHT_PIN;
-extern int DRL_PIN;
-extern int TURN_LEFT_PIN;
-extern int TURN_RIGHT_PIN;
-extern int HORN_PIN;
-extern int BUZZER_PIN;
-extern int BTN_HEADLIGHT_PIN;
-extern int BTN_TURN_LEFT_PIN;
-extern int BTN_TURN_RIGHT_PIN;
-extern int BTN_HORN_PIN;
+// ================= Рабочие пины GPIO (определения) =================
+// Значения по умолчанию; перезаписываются из NVS в applyPinConfig().
+int THROTTLE_ADC_PIN   = 34;
+int THROTTLE_DAC_PIN   = 25;
+int BRAKE_PIN          = 27;
+int PAS_SENSOR_PIN     = 14;
+int PAS_BUTTON_PIN     = 13;
+int HEADLIGHT_PIN      = 18;
+int DRL_PIN            = 19;
+int TURN_LEFT_PIN      = 21;
+int TURN_RIGHT_PIN     = 22;
+int HORN_PIN           = 23;
+int BUZZER_PIN         = 4;
+int BTN_HEADLIGHT_PIN  = 16;
+int BTN_TURN_LEFT_PIN  = 17;
+int BTN_TURN_RIGHT_PIN = 32;
+int BTN_HORN_PIN       = 33;
 
 // ================= GPIO Capabilities (ESP32-WROOM) =================
 bool gpioExists(int g)    { return (g >= 0 && g <= 19) || (g >= 21 && g <= 23) || (g >= 25 && g <= 27) || (g >= 32 && g <= 39); }

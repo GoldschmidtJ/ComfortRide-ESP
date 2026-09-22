@@ -2,35 +2,32 @@
 #include <Preferences.h>
 #include "system/storage.h"
 #include "system/hardware_config.h"
+
+// ================= NVS-хранилище (единственный экземпляр) =================
+Preferences prefs;
 #include "system/events_engine.h"
 #include "core/throttle.h"
 #include "system/inputs.h"
 #include "core/pas.h"
 #include "core/cruise.h"
 
+// ================= WiFi учётные данные =================
+// storedSsid/storedPass — сохранённая сеть (сверх дефолтной ssid/password из
+// network.cpp). Если через веб выбрать другую сеть — она сохранится в NVS
+// и будет использоваться вместо дефолтной.
+String storedSsid = "";
+String storedPass = "";
+String storedApSsid = "BikeControllerAP";
+String storedApPass = "";
+
 // ================= Внешние переменные из main.cpp =================
 
 // Общие константы
-extern Preferences prefs;
-
-// --- Распиновка GPIO ---
-extern const PinConfig PIN_CONFIG_DEFAULTS;
-extern PinConfig pinConfig;
-extern bool pinConfigCustom;
-
-
-extern char pinRoleNames[PIN_ROLE_COUNT][USER_LABEL_SIZE];
-
-
-extern EventRule eventRules[EVENT_MAX_RULES];
-extern char eventRuleNames[EVENT_MAX_RULES][USER_LABEL_SIZE];
-extern const EventRule EVENT_DEFAULTS[EVENT_MAX_RULES];
 void enforceSystemRules(EventRule &r, int slot, bool forceActionsUpdate);
 #define EVENT_CONFIG_VERSION 3
 
 // --- WiFi ---
-extern String storedSsid, storedPass;
-extern String storedApSsid, storedApPass;
+// (storedSsid, storedPass, storedApSsid, storedApPass объявлены в storage.h)
 
 // ================= РЕАЛИЗАЦИЯ ФУНКЦИЙ =================
 
@@ -167,7 +164,7 @@ void cruiseSettingsSave() {
 
 void cruiseSettingsLoad() {
   prefs.begin("cruise", false);
-  cruiseLevelsCount = constrain(prefs.getInt("cnt", 3), 0, CRUISE_MAX_LEVELS);
+  cruiseLevelsCount = constrain(prefs.getInt("cnt", 3), 1, CRUISE_MAX_LEVELS);
   cruiseStartPercent = constrain(round(prefs.getFloat("stPct", 20.0f)), 0.0f, 100.0f);
   cruiseEndPercent = constrain(round(prefs.getFloat("endPct", 100.0f)), 0.0f, 100.0f);
   size_t got = prefs.isKey("pct") && prefs.getBytesLength("pct") == sizeof(cruiseLevelPercent)

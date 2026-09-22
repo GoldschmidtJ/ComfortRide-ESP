@@ -1,4 +1,8 @@
+#include "web/html_pages_hub.h"
 
+#include <WebServer.h>
+void sendHubPage(WebServer &server) {
+  static const char page[] PROGMEM = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenBike Controller v0.4.0</title>
@@ -48,4 +52,7 @@ function updateSysStatus(){
 }
 setInterval(updateSysStatus,2000);updateSysStatus();
 </script>
-</body></html>
+</body></html>)rawliteral";
+  server.send_P(200, PSTR("text/html; charset=utf-8"), page, sizeof(page)-1);
+}
+

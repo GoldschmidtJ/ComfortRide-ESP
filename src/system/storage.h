@@ -1,6 +1,21 @@
 #ifndef STORAGE_H
 #define STORAGE_H
 
+#include <Arduino.h>
+#include <Preferences.h>
+
+// Модуль для работы с энергонезависимой памятью (NVS) ESP32
+// Содержит функции сохранения/загрузки настроек проекта
+
+// Единственный экземпляр NVS-хранилища, используется всеми Save/Load
+extern Preferences prefs;
+
+// ================= Сохранённые сетевые реквизиты (определения в storage.cpp) =================
+extern String storedSsid;
+extern String storedPass;
+extern String storedApSsid;
+extern String storedApPass;
+
 // Модуль для работы с энергонезависимой памятью (NVS) ESP32
 // Содержит функции сохранения/загрузки всех настроек проекта
 
