@@ -21,6 +21,8 @@ void handleApiPasSetLevel();
 void handleApiPasToggleMode();
 void handleApiCruiseToggleMode();
 void handleThrottlePage();
+void handleDrivePage();
+
 void handleThrottleSave();
 void handleThrottleCalMin();
 void handleThrottleCalMax();
@@ -49,6 +51,10 @@ void initWebRoutes(WebServer& server) {
   server.on("/api/cruise/toggle", HTTP_GET, handleApiCruiseToggleMode);
   
   // Настройки газа (throttle)
+  // Объединенные настройки управления тягой: Газ + PAS + Круиз
+  server.on("/settings/drive", handleDrivePage);
+
+
   server.on("/settings/throttle", handleThrottlePage);
   server.on("/settings/throttle/save", HTTP_POST, handleThrottleSave);
   server.on("/settings/throttle/cal_min", HTTP_POST, handleThrottleCalMin);

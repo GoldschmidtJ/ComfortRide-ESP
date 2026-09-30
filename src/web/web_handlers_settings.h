@@ -17,6 +17,8 @@ void handlePasCalStop();
 void handleCruisePage();
 void handleCruiseSave();
 
+void handleDrivePage();
+
 void handleWifiPage();
 void handleWifiScan();
 void handleWifiSave();

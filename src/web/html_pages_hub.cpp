@@ -26,9 +26,7 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
 </div>
 <div class="header"><h1>OpenBike Controller</h1><div class="version">v0.4.0</div></div>
 <a class="card primary" href="/emulation">Эмуляция дисплея и пульта &rarr;</a>
-<a class="card" href="/settings/throttle">Газ &rarr;</a>
-<a class="card" href="/settings/pas">PAS &rarr;</a>
-<a class="card" href="/settings/cruise">Круиз &rarr;</a>
+<a class="card" href="/settings/drive">Управление тягой (Газ · PAS · Круиз) &rarr;</a>
 <a class="card" href="/settings/pins">GPIO &rarr;</a>
 <a class="card" href="/settings/events">События &rarr;</a>
 <a class="card" href="/wifi">Сеть &rarr;</a>
