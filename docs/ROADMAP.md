@@ -43,17 +43,17 @@
 Правило: заголовок модуля — единственный источник правды о своём API; .cpp не объявляет `extern` для чужих символов.
 
 - [x] A1. `throttle.cpp` → cruise/pas (11 шт., все дубли — заголовки уже включены)
-- [x] A2. `web_handlers_settings.cpp` (59 шт.) → throttle.h/pas.h/cruise.h/web_ui.h/network.h/storage.h
+- [x] A2. `web_handlers_settings.cpp` (59 шт.) → throttle.h/pas.h/cruise.h/web_ui.h/network.h/storage.h (4 файла: wifi/throttle/pas/cruise)
 - [x] A3. `web_handlers_events.cpp` (12), `web_handlers_pins.cpp` (11), `storage.cpp` (7), `peripherals.cpp` (6), `web_handlers_system.cpp` (5), `debug_capture.cpp` (3), `web_handlers_telemetry.cpp` (3), `network.cpp` (1), `web_handlers_emulation.cpp` (1)
 
 Попутно: `MDNS_HOST` добавлен в `system/network.h` (был только extern в .cpp), сетевые строки `storedSsid/storedPass/storedApSsid/storedApPass` — в `system/storage.h`.
 
-### [~] D. Разбиение страницы эмулятора (html_pages_emulation.cpp, 1607 строк → PROGMEM-части)
+### [x] D. Разбиение страницы эмулятора (html_pages_emulation.cpp, 1607 строк → PROGMEM-части)
 - [x] head (16) / status (84) / state (129) / app (520) выделены
 - [x] matrix (746) → `html_pages_emulation_matrix_{core,boot,display}.cpp` (368/143/253):
   core — примитивы/шрифты/спрайты/renderCanvas, boot — Pac-Man интро, display — updateMatrixDisplay.
   Части конкатенируются в один `<script>` (порядок в `tools/gen_emulation_page.py` важен);
-  `data/emulation.html` перегенерирована, отличий от разбиения нет (байт-в-байт, кроме версии).
+  `data/emulation.html` перегенерирована, отличий от разбиения нет (byte-identical).
 
 ### [x] B. Разделение web_handlers_system.cpp (771 строка)
 - [x] firmware-update-хендлеры → `web/web_handlers_update.{h,cpp}` (109 строк)
@@ -67,4 +67,4 @@
 ---
 
 ## Правила верификации
-После каждого шага: `pio run -e esp32dev` (SUCCESS) + `pio test -e native` (18 PASSED / 0 FAILED).
+После каждого шага: `pio run -e esp32dev` (SUCCESS) + `pio test -e native` (16 PASSED / 0 FAILED).
