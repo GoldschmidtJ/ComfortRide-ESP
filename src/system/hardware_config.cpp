@@ -49,9 +49,10 @@ const PinRole pinRoles[PIN_ROLE_COUNT] = {
   {"bTL",   "Кнопка пов. влево",   false, false, false, true,  false},
   {"bTR",   "Кнопка пов. вправо",  false, false, false, true,  false},
   {"bHrn",  "Кнопка гудка",        false, false, false, true,  false},
+  {"batt",  "Напряжение батареи", false, true,  false, false, false},
 };
 
-const PinConfig PIN_CONFIG_DEFAULTS = {34, 25, 27, 14, 13, 18, 19, 21, 22, 23, 4, 16, 17, 32, 33};
+const PinConfig PIN_CONFIG_DEFAULTS = {34, 25, 27, 14, 13, 18, 19, 21, 22, 23, 4, 16, 17, 32, 33, -1};
 
 // ================= State Variables =================
 PinConfig pinConfig = PIN_CONFIG_DEFAULTS;

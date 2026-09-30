@@ -16,7 +16,7 @@ bool gpioIsUart(int g);
 // ================= Pin Configuration =================
 #define USER_LABEL_SIZE 65
 #define CUSTOM_PIN_MAX 8
-#define PIN_ROLE_COUNT 15
+#define PIN_ROLE_COUNT 16
 
 struct PinConfig {
   int16_t throttleAdc;
@@ -34,6 +34,7 @@ struct PinConfig {
   int16_t btnTurnLeft;
   int16_t btnTurnRight;
   int16_t btnHorn;
+  int16_t batteryAdc;
 };
 
 struct PinRole {

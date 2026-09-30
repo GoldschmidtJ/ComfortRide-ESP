@@ -15,7 +15,7 @@ extern const unsigned long DEBUG_SAMPLE_INTERVAL_MS; // 100 мс
 void updateDebugBuffer(float throttleInV, float throttleOutV);
 
 // ================= Пассивная запись шины дисплея (сниффер /debug) =================
-extern const int BUS_CAPTURE_PIN;                   // 36 (вход ADC1, RX-only)
+extern int busCapturePin;                           // переключаемый пин (35/36/39, input-only)
 extern const uint32_t BUS_CAPTURE_CAPACITY;         // 4096 фронтов
 extern BusEdge busCapture[];
 extern BusEdge busCaptureSnapshot[];
@@ -29,7 +29,8 @@ extern volatile bool busCaptureRunning;
 extern portMUX_TYPE busCaptureMux;
 
 // Проверка, не занят ли пин захвата системной/пользовательской ролью
-bool busCapturePinBusy(String *reason);
+bool busCapturePinValid(int pin);
+bool busCapturePinBusy(int pin, String *reason);
 
 // ISR захвата фронтов (подключается через attachInterrupt)
 void IRAM_ATTR onBusCaptureEdge();

@@ -162,6 +162,7 @@ void handleSettingsExport() {
   json += "\"spEn\":" + String(pasSoftStopEnabled ? 1 : 0) + ",";
   json += "\"ssMs\":" + String(pasSoftStartMs) + ",";
   json += "\"spMs\":" + String(pasSoftStopMs) + ",";
+  json += "\"smMode\":" + String(pasSmoothMode) + ",";
   json += "\"enabled\":" + String(pasEnabled ? 1 : 0) + ",";
   json += "\"pct\":[";
   int safePasLevelsCount = constrain(pasLevelsCount, 0, PAS_MAX_LEVELS);
@@ -221,6 +222,7 @@ void handleSettingsExport() {
   json += "\"spEn\":" + String(cruiseSoftStopEnabled ? 1 : 0) + ",";
   json += "\"ssMs\":" + String(cruiseSoftStartMs) + ",";
   json += "\"spMs\":" + String(cruiseSoftStopMs) + ",";
+  json += "\"smMode\":" + String(cruiseSmoothMode) + ",";
   json += "\"enabled\":" + String(cruiseEnabled ? 1 : 0) + ",";
   json += "\"confThr\":" + String(cruiseConfirmThrottleAfterStart ? 1 : 0) + ",";
   json += "\"brkMode\":" + String(cruiseAfterBrakingMode) + ",";
@@ -365,6 +367,8 @@ void handleSettingsImport() {
       if (ok && value >= 0) pasSoftStartMs = (unsigned long)value;
       value = jsonIntAfter(pasJson, "\"spMs\":", ok);
       if (ok && value >= 0) pasSoftStopMs = (unsigned long)value;
+      value = jsonIntAfter(pasJson, "\"smMode\":", ok);
+      if (ok) pasSmoothMode = (uint8_t)constrain(value, (int)SMOOTH_MODE_DEFAULT, (int)SMOOTH_MODE_OFF);
       int pctPos = pasJson.indexOf("\"pct\":[");
       if (pctPos != -1) readPercentArray(pasJson.substring(pctPos + 6), pasLevelPercent, pasLevelsCount);
       pasCurrentLevel = constrain(pasCurrentLevel, 0, pasLevelsCount);
@@ -537,6 +541,8 @@ void handleSettingsImport() {
       if (ok && value >= 0) cruiseSoftStartMs = (unsigned long)value;
       value = jsonIntAfter(cruiseJson, "\"spMs\":", ok);
       if (ok && value >= 0) cruiseSoftStopMs = (unsigned long)value;
+      value = jsonIntAfter(cruiseJson, "\"smMode\":", ok);
+      if (ok) cruiseSmoothMode = (uint8_t)constrain(value, (int)SMOOTH_MODE_DEFAULT, (int)SMOOTH_MODE_OFF);
       int pctPos = cruiseJson.indexOf("\"pct\":[");
       if (pctPos != -1) readPercentArray(cruiseJson.substring(pctPos + 6), cruiseLevelPercent, cruiseLevelsCount);
       cruiseCurrentLevel = constrain(cruiseCurrentLevel, 0, cruiseLevelsCount);

@@ -1,4 +1,5 @@
 #include "core/throttle.h"
+#include "system/battery_sag.h" // batterySagLimitVoltage(), batterySagGetStateData()
 #include "system/events_engine.h" // serviceModeActive, serviceThrottleLimitPct
 #include "core/pas.h"             // getPasTargetV(), applyPasSmoothing(), pasConfirmedActive
 #include "core/cruise.h"          // getCruiseTargetV(), applyCruiseSmoothing()
@@ -181,6 +182,9 @@ void updateThrottle() {
   if (combinedV < throttleOutMinV) {
     combinedV = throttleOutMinV;
   }
+
+  // Батарейный саг-гард: ограничение мощности при низком напряжении
+  combinedV = batterySagLimitVoltage(combinedV);
 
   // Сервисный режим: жёсткий потолок мощности
   if (serviceModeActive) {

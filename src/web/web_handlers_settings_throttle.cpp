@@ -53,7 +53,7 @@ void handleThrottlePage() {
 <p class="fhint">1 + R4/R3. Для R3=10 кОм и R4=3,3 кОм: 1,33.</p>
 <p class="warn">Выше 3.3В на самом ЦАП ESP32 не поднимется — это аппаратный предел чипа. ОУ после ЦАП компенсирует это усилением, но выше напряжения питания ОУ (обычно 5В) выход тоже не поднимется физически.</p>
 </fieldset>
-<fieldset><legend>Мягкий старт</legend>
+<fieldset><legend>Мягкий старт (по умолчанию для PAS и Круиза)</legend>
 <div class="chk"><label for="throttleSsEn">Мягкий старт</label><input type="checkbox" id="throttleSsEn" name="ssEn" )rawliteral"; html += throttleSoftStartEnabled?"checked":"";
   html += R"rawliteral(></div>
 <div class="frow"><label>Время разгона, мс</label><input type="number" name="ssMs" value=")rawliteral"; html += String(throttleSoftStartMs);
@@ -62,6 +62,7 @@ void handleThrottlePage() {
   html += R"rawliteral(">
 <input type="hidden" name="spMs" value=")rawliteral"; html += String(throttleSoftStopMs);
   html += R"rawliteral(">
+<p class="fhint">Эти настройки применяются к ручке газа, а также к PAS и Круизу, если там выбран режим «По умолчанию».</p>
 </fieldset>
 <button type="submit">Сохранить</button>
 </form>

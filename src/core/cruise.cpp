@@ -1,4 +1,6 @@
 #include "core/cruise.h"
+#include "core/pas.h"           // SMOOTH_MODE_DEFAULT, SMOOTH_MODE_OFF, SMOOTH_MODE_CUSTOM
+#include "core/throttle.h"      // throttleSoftStartEnabled, throttleSoftStartMs для SMOOTH_MODE_DEFAULT
 
 // ================= Константы =================
 const int CRUISE_MAX_LEVELS = 100;
@@ -15,6 +17,8 @@ int cruiseAfterBrakingMode = 1;  // 0: сброс, 1: подтверждение
 int cruiseAfterThrottleMode = 2; // 0: сброс, 1: подтверждение газом, 2: восстановление (default)
 
 // ================= Мягкий старт/стоп =================
+// cruiseSmoothMode: 0 = по умолчанию (из Газа), 1 = свои вкл+тайминги, 2 = выкл (см. SmoothMode в pas.h)
+uint8_t cruiseSmoothMode = SMOOTH_MODE_DEFAULT;
 bool cruiseSoftStartEnabled = false;
 bool cruiseSoftStopEnabled = false;
 unsigned long cruiseSoftStartMs = 500;
@@ -54,7 +58,13 @@ float applyCruiseSmoothing(float targetV) {
   bool rising = diff > 0;
   bool enabled = rising ? cruiseSoftStartEnabled : cruiseSoftStopEnabled;
   unsigned long tau = rising ? cruiseSoftStartMs : cruiseSoftStopMs;
-
+  // Режим «по умолчанию» — используем статус и тайминги мягкого старта/стопа Газа.
+  if (cruiseSmoothMode == SMOOTH_MODE_DEFAULT) {
+    enabled = rising ? throttleSoftStartEnabled : throttleSoftStopEnabled;
+    tau = rising ? throttleSoftStartMs : throttleSoftStopMs;
+  } else if (cruiseSmoothMode == SMOOTH_MODE_OFF) {
+    enabled = false;
+  }
   if (!enabled || tau == 0) {
     cruiseSmoothOutV = targetV;
     return targetV;

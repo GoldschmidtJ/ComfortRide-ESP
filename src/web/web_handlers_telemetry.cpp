@@ -4,11 +4,13 @@
 #include "core/pas.h"
 #include "core/cruise.h"
 #include "core/lights.h"
+#include "system/battery_sag.h" // batterySagGetStateData()
 #include <WiFi.h>
 #include <driver/gpio.h>
 #include <math.h>
 #include "system/version.h"             // FIRMWARE_VERSION — единая точка версии
 #include "web/web_routes.h"
+#include "web/param_utils.h"          // getArgInt
 #include "core/throttle.h" // hwThrottle*, serviceThrottleLimitPct, serviceModeActive
 #include "system/events_engine.h" // serviceModeActive, serviceThrottleLimitPct
 #include "core/throttle.h" // hwThrottle*, serviceThrottleLimitPct
@@ -98,6 +100,10 @@ void handleSystemStatus() {
   json += "],";
   json += "\"bt_active\":false,"; // Assuming this is a boolean
   json += "\"temp\":" + String(round(chipTemp)); // Add internal temperature, rounded
+  // Батарейный саг-гард
+  json += ",\"sag_state\":" + String(static_cast<int>(batterySagGetStateData().state));
+  json += ",\"battery_mv\":" + String(batterySagGetStateData().battery_mv);
+  json += ",\"battery_v_raw\":" + String(batterySagGetStateData().voltage_raw, 2);
   json += "}";
   server.send(200, "application/json", json);
 }
@@ -128,13 +134,24 @@ void handleDebugData() {
 
 void handleBusCaptureControl() {
   String command = server.arg("cmd");
+  if (command == "pin") {
+    // Выбор пина разведки: только input-only 35/36/39, захват должен быть остановлен
+    int pin = getArgInt(server, "pin");
+    if (!busCapturePinValid(pin)) { server.send(400, "text/plain", "Допустимы GPIO 35/36/39"); return; }
+    if (busCaptureRunning) { server.send(409, "text/plain", "Сначала остановите захват"); return; }
+    String reason;
+    if (busCapturePinBusy(pin, &reason)) { server.send(409, "text/plain", reason); return; }
+    busCapturePin = pin;
+    server.send(200, "text/plain", "OK");
+    return;
+  }
   if (command == "start") {
     String reason;
-    if (busCapturePinBusy(&reason)) { server.send(409, "text/plain", reason); return; }
+    if (busCapturePinBusy(busCapturePin, &reason)) { server.send(409, "text/plain", reason); return; }
     if (!busCaptureRunning) {
-      pinMode(BUS_CAPTURE_PIN, INPUT);
+      pinMode(busCapturePin, INPUT);
       clearBusCapture();
-      attachInterrupt(digitalPinToInterrupt(BUS_CAPTURE_PIN), onBusCaptureEdge, CHANGE);
+      attachInterrupt(digitalPinToInterrupt(busCapturePin), onBusCaptureEdge, CHANGE);
       portENTER_CRITICAL(&busCaptureMux);
       busCaptureRunning = true;
       busCaptureStartedUs = micros();
@@ -145,7 +162,7 @@ void handleBusCaptureControl() {
     portENTER_CRITICAL(&busCaptureMux);
     busCaptureRunning = false;
     portEXIT_CRITICAL(&busCaptureMux);
-    detachInterrupt(digitalPinToInterrupt(BUS_CAPTURE_PIN));
+    detachInterrupt(digitalPinToInterrupt(busCapturePin));
   } else if (command == "clear") {
     clearBusCapture();
   } else {
@@ -163,10 +180,10 @@ void handleBusCaptureStatus() {
   startedUs = busCaptureStartedUs; lastUs = busCaptureLastUs; running = busCaptureRunning;
   portEXIT_CRITICAL(&busCaptureMux);
   String reason;
-  bool busy = busCapturePinBusy(&reason);
+  bool busy = busCapturePinBusy(busCapturePin, &reason);
   uint32_t durationUs = total ? (lastUs - startedUs) : 0;
   String json = "{\"running\":" + String(running ? "true" : "false") +
-                ",\"pin\":" + String(BUS_CAPTURE_PIN) +
+                ",\"pin\":" + String(busCapturePin) +
                 ",\"busy\":" + String(busy ? "true" : "false") +
                 ",\"reason\":\"" + jsonEscape(reason) + "\"" +
                 ",\"count\":" + String(count) +

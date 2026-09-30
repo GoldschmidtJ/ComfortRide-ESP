@@ -2,6 +2,7 @@
 #include <Preferences.h>
 #include "system/storage.h"
 #include "system/hardware_config.h"
+#include "system/battery_sag.h"
 
 // ================= NVS-хранилище (единственный экземпляр) =================
 Preferences prefs;
@@ -114,6 +115,7 @@ void pasSettingsSave() {
   prefs.putInt("spEn", pasSoftStopEnabled ? 1 : 0);
   prefs.putULong("ssMs", pasSoftStartMs);
   prefs.putULong("spMs", pasSoftStopMs);
+  prefs.putInt("smMode", pasSmoothMode); // 0=по умолчанию (из Газа), 1=свои, 2=выкл
   prefs.putInt("enabled", pasEnabled ? 1 : 0);
   prefs.end();
 }
@@ -133,6 +135,7 @@ void pasSettingsLoad() {
   pasSoftStopEnabled = prefs.getInt("spEn", 0) != 0;
   pasSoftStartMs = prefs.getULong("ssMs", 500);
   pasSoftStopMs = prefs.getULong("spMs", 800);
+  pasSmoothMode = (uint8_t)constrain(prefs.getInt("smMode", (int)SMOOTH_MODE_DEFAULT), (int)SMOOTH_MODE_DEFAULT, (int)SMOOTH_MODE_OFF);
   pasEnabled = (prefs.getInt("enabled", 1) != 0);
   prefs.end();
   if (got != sizeof(pasLevelPercent)) {
@@ -158,6 +161,7 @@ void cruiseSettingsSave() {
   prefs.putInt("spEn", cruiseSoftStopEnabled ? 1 : 0);
   prefs.putULong("ssMs", cruiseSoftStartMs);
   prefs.putULong("spMs", cruiseSoftStopMs);
+  prefs.putInt("smMode", cruiseSmoothMode); // 0=по умолчанию (из Газа), 1=свои, 2=выкл
   prefs.putBool("cen", cruiseEnabled);
   prefs.end();
 }
@@ -174,6 +178,7 @@ void cruiseSettingsLoad() {
   cruiseEnabled = prefs.getBool("cen", false);
   cruiseSoftStartMs = prefs.getULong("ssMs", 500);
   cruiseSoftStopMs = prefs.getULong("spMs", 800);
+  cruiseSmoothMode = (uint8_t)constrain(prefs.getInt("smMode", (int)SMOOTH_MODE_DEFAULT), (int)SMOOTH_MODE_DEFAULT, (int)SMOOTH_MODE_OFF);
   cruiseConfirmThrottleAfterStart = prefs.getBool("confThr", false);
   cruiseAfterBrakingMode = prefs.getInt("brkMode", 1);
   cruiseAfterThrottleMode = prefs.getInt("thrMode", 2);
@@ -279,4 +284,15 @@ void apSettingsLoad() {
   if (prefs.isKey("ssid")) storedApSsid = prefs.getString("ssid", "BikeControllerAP");
   if (prefs.isKey("pass")) storedApPass = prefs.getString("pass", "");
   prefs.end();
+}
+
+// ================= Батарейный саг-гард =================
+void saveAllSettings() {
+  // ... (существующая логика)
+  batterySagSave();
+}
+
+void loadAllSettings() {
+  // ... (существующая логика)
+  batterySagLoad();
 }

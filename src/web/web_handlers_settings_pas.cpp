@@ -75,10 +75,18 @@ void handlePasPage() {
 </fieldset>
 
 <fieldset><legend>Мягкий старт</legend>
+<div class="frow"><label>Режим сглаживания</label>
+<select name="smMode" id="pasSmMode" onchange="togglePasCustomSmooth()">
+  <option value="0")rawliteral"; html += (pasSmoothMode == 0 ? " selected" : ""); html += R"rawliteral(>По умолчанию (из настроек Газа)</option>
+  <option value="1")rawliteral"; html += (pasSmoothMode == 1 ? " selected" : ""); html += R"rawliteral(>Свои настройки</option>
+  <option value="2")rawliteral"; html += (pasSmoothMode == 2 ? " selected" : ""); html += R"rawliteral(>Выключено</option>
+</select></div>
+<div id="pasCustomBlock">
 <div class="chk"><label for="pasSsEn">Мягкий старт</label><input type="checkbox" id="pasSsEn" name="ssEn" )rawliteral"; html += pasSoftStartEnabled?"checked":"";
   html += R"rawliteral(></div>
 <div class="frow"><label>Время разгона, мс</label><input type="number" name="ssMs" value=")rawliteral"; html += String(pasSoftStartMs);
   html += R"rawliteral("></div>
+</div>
 <input type="hidden" name="spEn" value=")rawliteral"; html += pasSoftStopEnabled ? "1" : "0";
   html += R"rawliteral(">
 <input type="hidden" name="spMs" value=")rawliteral"; html += String(pasSoftStopMs);
@@ -99,6 +107,10 @@ function autoDistribute(){
   distributeLevels(saved,count); renderLevels();
 }
 renderLevels();
+function togglePasCustomSmooth(){
+  document.getElementById('pasCustomBlock').style.display = document.getElementById('pasSmMode').value === '1' ? '' : 'none';
+}
+togglePasCustomSmooth();
 document.getElementById('f').addEventListener('submit',function(e){
   e.preventDefault();
   const d=new FormData(this);
@@ -170,6 +182,10 @@ void handlePasSave() {
   pasSoftStopEnabled = getArgInt(server, "spEn") != 0; // скрытое поле: значение сохраняем, UI скрыт
   pasSoftStartMs = getArgInt(server, "ssMs");
   pasSoftStopMs = getArgInt(server, "spMs");
+  {
+    int sm = getArgInt(server, "smMode");
+    pasSmoothMode = (uint8_t)constrain(sm, (int)SMOOTH_MODE_DEFAULT, (int)SMOOTH_MODE_OFF);
+  }
   pasEnabled = server.hasArg("en");
 
   pasSettingsSave();

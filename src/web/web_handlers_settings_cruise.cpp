@@ -3,6 +3,7 @@
 #include <math.h>              // round
 
 #include "core/cruise.h"       // cruise*-настройки, CRUISE_MAX_LEVELS
+#include "core/pas.h"          // SmoothMode (SMOOTH_MODE_*)
 #include "web/param_utils.h"   // getArgInt (семантика toInt)
 #include "system/storage.h"    // cruiseSettingsSave
 #include "web/web_ui.h"        // getTopBarCss/getSettingsCss/getTopBarHtml/getBackMenuHtml/getSettingsJs
@@ -40,12 +41,20 @@ void handleCruisePage() {
 <div id="levels" class="levels"></div>
 </fieldset>
 <fieldset><legend>Мягкий старт</legend>
+<div class="frow"><label>Режим сглаживания</label>
+<select name="smMode" id="cruiseSmMode" onchange="toggleCruiseCustomSmooth()">
+  <option value="0")rawliteral"; html += (cruiseSmoothMode == 0 ? " selected" : ""); html += R"rawliteral(>По умолчанию (из настроек Газа)</option>
+  <option value="1")rawliteral"; html += (cruiseSmoothMode == 1 ? " selected" : ""); html += R"rawliteral(>Свои настройки</option>
+  <option value="2")rawliteral"; html += (cruiseSmoothMode == 2 ? " selected" : ""); html += R"rawliteral(>Выключено</option>
+</select></div>
+<div id="cruiseCustomBlock">
 <div class="chk"><label for="cruiseSsEn">Мягкий старт</label><input type="checkbox" id="cruiseSsEn" name="ssEn" )rawliteral";
   html += cruiseSoftStartEnabled ? "checked" : "";
   html += R"rawliteral(></div>
 <div class="frow"><label>Время разгона, мс</label><input type="number" name="ssMs" value=")rawliteral";
   html += String(cruiseSoftStartMs);
   html += R"rawliteral("></div>
+</div>
 <input type="hidden" name="spEn" value=")rawliteral";
   html += cruiseSoftStopEnabled ? "1" : "0";
   html += R"rawliteral(">
@@ -91,6 +100,10 @@ function autoDistribute(){
   distributeLevels(saved,count,st,end); renderLevels();
 }
 renderLevels();
+function toggleCruiseCustomSmooth(){
+  document.getElementById('cruiseCustomBlock').style.display = document.getElementById('cruiseSmMode').value === '1' ? '' : 'none';
+}
+toggleCruiseCustomSmooth();
 document.getElementById('f').addEventListener('submit',function(e){
   e.preventDefault();
   const d=new FormData(this);
@@ -150,6 +163,10 @@ void handleCruiseSave() {
   cruiseSoftStopEnabled = getArgInt(server, "spEn") != 0; // скрытое поле: значение сохраняем, UI скрыт
   cruiseSoftStartMs = getArgInt(server, "ssMs");
   cruiseSoftStopMs = getArgInt(server, "spMs");
+  {
+    int sm = getArgInt(server, "smMode");
+    cruiseSmoothMode = (uint8_t)constrain(sm, (int)SMOOTH_MODE_DEFAULT, (int)SMOOTH_MODE_OFF);
+  }
   cruiseConfirmThrottleAfterStart = server.hasArg("confThr");
   if (server.hasArg("brkMode")) cruiseAfterBrakingMode = getArgInt(server, "brkMode");
   if (server.hasArg("thrMode")) cruiseAfterThrottleMode = getArgInt(server, "thrMode");

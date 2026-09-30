@@ -13,7 +13,10 @@ portMUX_TYPE debugBufferMux = portMUX_INITIALIZER_UNLOCKED;
 const unsigned long DEBUG_SAMPLE_INTERVAL_MS = 100;
 
 // ================= Пассивная запись шины дисплея =================
-const int BUS_CAPTURE_PIN = 36;
+int busCapturePin = 36; // кандидаты 35/36/39 (input-only), переключается с /debug
+bool busCapturePinValid(int pin) {
+  return pin == 35 || pin == 36 || pin == 39;
+}
 const uint32_t BUS_CAPTURE_CAPACITY = 4096;
 BusEdge busCapture[BUS_CAPTURE_CAPACITY];
 BusEdge busCaptureSnapshot[BUS_CAPTURE_CAPACITY];
@@ -26,16 +29,16 @@ volatile uint32_t busCaptureLastUs = 0;
 volatile bool busCaptureRunning = false;
 portMUX_TYPE busCaptureMux = portMUX_INITIALIZER_UNLOCKED;
 
-bool busCapturePinBusy(String *reason) {
+bool busCapturePinBusy(int pin, String *reason) {
   for (int i = 0; i < PIN_ROLE_COUNT; i++) {
-    if (pinField(pinConfig, i) == BUS_CAPTURE_PIN) {
-      if (reason) *reason = "GPIO36 занят системной ролью «" + pinRoleName(i) + "»";
+    if (pinField(pinConfig, i) == pin) {
+      if (reason) *reason = "GPIO" + String(pin) + " занят системной ролью «" + pinRoleName(i) + "»";
       return true;
     }
   }
   for (int i = 0; i < CUSTOM_PIN_MAX; i++) {
-    if (customPins[i].used && customPins[i].gpio == BUS_CAPTURE_PIN) {
-      if (reason) *reason = "GPIO36 занят дополнительной ролью «" + String(customPins[i].name) + "»";
+    if (customPins[i].used && customPins[i].gpio == pin) {
+      if (reason) *reason = "GPIO" + String(pin) + " занят дополнительной ролью «" + String(customPins[i].name) + "»";
       return true;
     }
   }
@@ -45,7 +48,7 @@ bool busCapturePinBusy(String *reason) {
 void IRAM_ATTR onBusCaptureEdge() {
   if (!busCaptureRunning) return;
   uint32_t now = micros();
-  uint8_t level = (uint8_t)gpio_get_level((gpio_num_t)BUS_CAPTURE_PIN);
+  uint8_t level = (uint8_t)gpio_get_level((gpio_num_t)busCapturePin);
   portENTER_CRITICAL_ISR(&busCaptureMux);
   if (!busCaptureRunning) { portEXIT_CRITICAL_ISR(&busCaptureMux); return; }
   uint32_t idx = busCaptureHead;

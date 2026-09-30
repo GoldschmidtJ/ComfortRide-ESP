@@ -18,6 +18,8 @@ extern int cruiseAfterBrakingMode;           // 0: сброс, 1: подтвер
 extern int cruiseAfterThrottleMode;          // 0: сброс, 1: подтверждение газом, 2: восстановление
 
 // ================= Мягкий старт/стоп =================
+// cruiseSmoothMode: 0 = по умолчанию (из Газа), 1 = свои вкл+тайминги, 2 = выкл (см. SmoothMode в pas.h)
+extern uint8_t cruiseSmoothMode;
 extern bool cruiseSoftStartEnabled;
 extern bool cruiseSoftStopEnabled;
 extern unsigned long cruiseSoftStartMs;

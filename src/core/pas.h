@@ -33,6 +33,17 @@ extern int pasLevelPercent[20]; // PAS_MAX_LEVELS
 extern int pasCurrentLevel;
 
 // ================= Мягкий старт/стоп =================
+// Режим сглаживания для PAS и Круиза:
+// 0 = по умолчанию (брать статус и тайминги из настроек Газа)
+// 1 = включено со своими таймингами
+// 2 = выключено
+enum SmoothMode : uint8_t {
+  SMOOTH_MODE_DEFAULT = 0,
+  SMOOTH_MODE_CUSTOM  = 1,
+  SMOOTH_MODE_OFF     = 2
+};
+
+extern uint8_t pasSmoothMode;
 extern bool pasSoftStartEnabled;
 extern bool pasSoftStopEnabled;
 extern bool pasEnabled;

@@ -2,6 +2,7 @@
 #include "system/events_engine.h" // serviceModeActive, serviceThrottleLimitPct
 #include "system/inputs.h"        // updatePasButton()
 #include "core/cruise.h"          // cruiseEnabled, cruiseCurrentLevel, ...
+#include "core/throttle.h"        // throttleSoftStart*, для SMOOTH_MODE_DEFAULT
 
 // ================= Константы =================
 const int PAS_MAX_LEVELS = 20;
@@ -33,6 +34,8 @@ int pasLevelPercent[20]; // PAS_MAX_LEVELS
 int pasCurrentLevel = 0; // 0 = выключен
 
 // ================= Мягкий старт/стоп =================
+// pasSmoothMode: 0 = по умолчанию (из Газа), 1 = свои вкл+тайминги, 2 = выкл (см. SmoothMode в pas.h)
+uint8_t pasSmoothMode = SMOOTH_MODE_DEFAULT;
 bool pasSoftStartEnabled = false;
 bool pasSoftStopEnabled = false;
 bool pasEnabled = true; // PAS enabled by default
@@ -138,7 +141,13 @@ float applyPasSmoothing(float targetV) {
   bool rising = diff > 0;
   bool enabled = rising ? pasSoftStartEnabled : pasSoftStopEnabled;
   unsigned long tau = rising ? pasSoftStartMs : pasSoftStopMs;
-
+  // Режим «по умолчанию» — используем статус и тайминги мягкого старта/стопа Газа.
+  if (pasSmoothMode == SMOOTH_MODE_DEFAULT) {
+    enabled = rising ? throttleSoftStartEnabled : throttleSoftStopEnabled;
+    tau = rising ? throttleSoftStartMs : throttleSoftStopMs;
+  } else if (pasSmoothMode == SMOOTH_MODE_OFF) {
+    enabled = false;
+  }
   if (!enabled || tau == 0) { 
     pasSmoothOutV = targetV; 
     return targetV; 

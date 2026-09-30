@@ -45,8 +45,14 @@ a{color:var(--ui-accent)}
 <div id="vals">Осциллограф отключен. Включите галочку для запуска.</div>
 <section class="bus-card">
   <h2>Пассивный сниффер цифровой линии</h2>
-  <p>Вход <b>GPIO36</b> (только чтение, без внутренней подтяжки). Подключайте только через согласование уровня до 3,3 В и общий GND.</p>
+  <p>Input-only пин (35/36/39, только чтение). Подключайте только через согласование уровня до 3,3 В и общий GND.</p>
   <div class="bus-actions">
+    <label class="tool-label" for="busPin">Пин:</label>
+    <select id="busPin" class="tbtn" onchange="busPinChanged()">
+      <option value="35">GPIO35</option>
+      <option value="36" selected>GPIO36</option>
+      <option value="39">GPIO39</option>
+    </select>
     <button type="button" class="tbtn" onclick="busCommand(&#39;start&#39;)">Старт</button>
     <button type="button" class="tbtn" onclick="busCommand(&#39;stop&#39;)">Стоп</button>
     <button type="button" class="tbtn" onclick="busCommand(&#39;clear&#39;)">Очистить</button>
@@ -162,6 +168,15 @@ async function busCommand(cmd) {
   } catch (e) { alert("Сниффер: " + e.message); }
 }
 
+async function busPinChanged() {
+  const pin = document.getElementById("busPin").value;
+  try {
+    const r = await fetch("/debug/bus/control?cmd=pin&pin=" + encodeURIComponent(pin), {method:"POST"});
+    if (!r.ok) throw new Error(await r.text());
+    await refreshBus();
+  } catch (e) { alert("Сниффер: " + e.message); await refreshBus(); }
+}
+
 function drawBus(edges) {
   if (!busCanvas || !busCtx) return;
   const w=busCanvas.width,h=busCanvas.height;
@@ -210,8 +225,11 @@ async function refreshBus() {
     let text=(status.running?"Запись идёт":"Остановлено")+" · фронтов в памяти: "+status.count+"/"+status.capacity+" · всего: "+status.total;
     if(status.overwritten) text+=" · перезаписано: "+status.overwritten;
     if(status.busy) text+=" · НЕДОСТУПНО: "+status.reason;
+    text+=" · пин GPIO"+status.pin;
     const statusElement=document.getElementById("busStatus");
     if (statusElement) statusElement.innerText=text;
+    const pinSel=document.getElementById("busPin");
+    if (pinSel && String(status.pin)!==pinSel.value) pinSel.value=String(status.pin);
     if(status.count) {
       const data=await fetchJson("/debug/bus/data");
       drawBus(data.edges);

@@ -37,6 +37,7 @@
 #include "web/web_handlers_update.h"    // HTTP-обработчики OTA-обновления прошивки
 #include "system/version.h"             // FIRMWARE_VERSION — единая точка версии
 #include "system/debug_capture.h"       // Отладочный буфер и сниффер шины (P3)
+#include "system/battery_sag.h"         // Батарейный саг-гард
 
 
 void criticalControlTask(void *pvParameters);
@@ -100,6 +101,10 @@ void setup() {
   lightsInit(HEADLIGHT_PIN, DRL_PIN);
   lightsSetTurnPins(TURN_LEFT_PIN, TURN_RIGHT_PIN);
   eventSettingsLoad();
+
+  // Инициализация батарейного саг-гарда
+  batterySagInit();
+  batterySagLoad();
 
   // Настоящий ЦАП ESP32 — ledcAttach больше не нужен, dacWrite() работает сразу
 
@@ -186,6 +191,9 @@ void criticalControlTask(void *pvParameters) {
     updateHorn();
     updateBuzzer();
     cpuProfileEnd();
+
+    // Батарейный саг-гард: обновление состояния
+    updateBatterySag();
 
     cpuProfileLoopEnd();
 

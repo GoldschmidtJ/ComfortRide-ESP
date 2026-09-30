@@ -27,11 +27,11 @@ void pinSettingsLoad();
 void throttleSettingsSave();
 void throttleSettingsLoad();
 
-// ================= PAS (Педальный датчик) =================
+// ================= PAS =================
 void pasSettingsSave();
 void pasSettingsLoad();
 
-// ================= Круиз-контроль (Cruise) =================
+// ================= Круиз (Cruise) =================
 void cruiseSettingsSave();
 void cruiseSettingsLoad();
 
@@ -47,5 +47,9 @@ void wifiCredsSave(const String &newSsid, const String &newPass);
 // ================= WiFi (AP режим) =================
 void apSettingsSave();
 void apSettingsLoad();
+
+// ================= Общие =================
+void loadAllSettings();
+void saveAllSettings();
 
 #endif // STORAGE_H
