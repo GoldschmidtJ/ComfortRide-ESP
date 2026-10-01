@@ -4,13 +4,12 @@
 #include "web/web_ui.h"      // getTopBarCss/getSettingsCss/getTopBarHtml/getBackMenuHtml
 #include "web/html_pages_topbar.h" // getTopBarJs
 void sendDebugPage(WebServer &server) {
-  static const char page[] PROGMEM = R"rawliteral(
-<!DOCTYPE html><html><head><meta charset="utf-8">
+  static const char part1[] PROGMEM = R"rawliteral(<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Отладка</title>
 <style>
-:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-dark:#0a0f0d;--ui-black:#000;--ui-led:#ff8c00;--ui-led-glow:#ff7700;--ui-led-off:#1e140a;--ui-radius:8px;--ui-control-height:44px;--ui-on-accent:#fff;--ui-success-soft:rgba(46,204,113,.12);--ui-warning-soft:rgba(243,156,18,.15);--ui-danger-soft:rgba(231,76,60,.12);--ui-font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-fs-h1:24px;--ui-fs-h2:18px;--ui-fs-body:16px;--ui-fs-small:13px;--ui-fs-mid:14px;--ui-fs-tiny:12px}
-*{box-sizing:border-box}body{background:var(--ui-bg);color:var(--ui-text);font-family:var(--ui-font);font-size:var(--ui-fs-body);line-height:1.45;padding:20px;max-width:760px;margin:auto}h1{font-size:var(--ui-fs-h1);line-height:1.2}h2{font-size:var(--ui-fs-h2);line-height:1.3}
+)rawliteral";
+  static const char part2[] PROGMEM = R"rawliteral(
 canvas{background:var(--ui-black);border:1px solid var(--ui-border);border-radius:var(--ui-radius);width:100%;max-width:700px;display:block}
 .debug-tools{margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px}.tool-label{font-size:var(--ui-fs-body)}.osc-toggle{margin-left:10px;font-weight:600;font-size:var(--ui-fs-body);min-height:44px;display:flex;align-items:center;gap:8px}.osc-toggle input{width:20px;height:20px;accent-color:var(--ui-accent)}.tbtn{display:inline-flex;align-items:center;justify-content:center;min-height:var(--ui-control-height);background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);padding:9px 12px;border-radius:var(--ui-radius);cursor:pointer;margin:0;font:inherit;font-weight:600;transition:background .12s,border-color .12s}.tbtn.selected{background:var(--ui-accent);border-color:var(--ui-accent)}
 .tbtn:hover{background:var(--ui-hover)}.tbtn:active{background:var(--ui-active)}.tbtn:focus-visible,a:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
@@ -21,7 +20,8 @@ canvas{background:var(--ui-black);border:1px solid var(--ui-border);border-radiu
 .bus-card{max-width:700px;margin-top:22px;padding:14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-card)}.bus-card h2{margin-top:0}.bus-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.bus-link{text-decoration:none;display:inline-block}#busStatus{font-size:var(--ui-fs-small);line-height:1.5;margin:8px 0}#busChart{height:220px}
 a{color:var(--ui-accent)}
 </style></head><body>
-<p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>
+)rawliteral";
+  static const char part3[] PROGMEM = R"rawliteral(
 <h1 data-i18n="debugTitle">Отладка (мини-осциллограф)</h1>
 <div class="debug-tools">
   <span class="tool-label" data-i18n="timeScale">Масштаб времени:</span>
@@ -245,6 +245,9 @@ refreshBus();
 </script>
 </body></html>
 )rawliteral";
-  server.send_P(200, PSTR("text/html; charset=utf-8"), page, sizeof(page)-1);
+
+  String html = String(part1) + getTopBarCss() + getSettingsCss() + String(part2) +
+                getTopBarHtml() + getBackMenuHtml() + String(part3);
+  server.send(200, "text/html; charset=utf-8", html);
 }
 

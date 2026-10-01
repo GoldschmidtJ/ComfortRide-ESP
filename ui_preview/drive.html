@@ -1,6 +1,6 @@
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Управление тягой</title>
+<title data-i18n="drive">Управление тягой</title>
 <style>
 
 :root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-dark:#0a0f0d;--ui-black:#000;--ui-led:#ff8c00;--ui-led-glow:#ff7700;--ui-led-off:#1e140a;--ui-radius:8px;--ui-control-height:44px;--ui-on-accent:#fff;--ui-success-soft:rgba(46,204,113,.12);--ui-warning-soft:rgba(243,156,18,.15);--ui-danger-soft:rgba(231,76,60,.12);--ui-font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-fs-h1:24px;--ui-fs-h2:18px;--ui-fs-body:16px;--ui-fs-small:13px;--ui-fs-mid:14px;--ui-fs-tiny:12px}
@@ -60,14 +60,15 @@ fieldset{border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin
     <span class="tb-dot dot-gray"></span>
     <span class="u-muted">Выкл</span>
   </div>
+  <button type="button" class="tb-item tb-link" id="tbLangBtn" onclick="toggleUiLang()" style="cursor:pointer;font-weight:700" title="Switch language">RU</button>
 </div>
 <p class="back-row"><a class="back-link" href="index.html">&larr; Меню</a></p>
-<h1>Управление тягой</h1>
+<h1 data-i18n="drive">Управление тягой</h1>
 <div class="tab-row">
-  <button type="button" class="tab-btn active" onclick="showSec('all',this)">Всё</button>
-  <button type="button" class="tab-btn" onclick="showSec('th',this)">Газ</button>
-  <button type="button" class="tab-btn" onclick="showSec('pas',this)">PAS</button>
-  <button type="button" class="tab-btn" onclick="showSec('cr',this)">Круиз</button>
+  <button type="button" class="tab-btn active" onclick="showSec('all',this)" data-i18n="all">Всё</button>
+  <button type="button" class="tab-btn" onclick="showSec('th',this)" data-i18n="throttle">Газ</button>
+  <button type="button" class="tab-btn" onclick="showSec('pas',this)" data-i18n="pas">PAS</button>
+  <button type="button" class="tab-btn" onclick="showSec('cr',this)" data-i18n="cruise">Круиз</button>
 </div>
 
 <!-- ================= БЛОК 1: ГАЗ ================= -->
@@ -101,7 +102,7 @@ fieldset{border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin
 <input type="hidden" name="spMs" value="">
 <p class="fhint">Параметры разгона применяются к ручке газа, а также к PAS и Круизу (при выборе режима «По умолчанию»).</p>
 </fieldset>
-<button type="submit">Сохранить газ</button>
+<button type="submit" data-i18n="save">Сохранить газ</button>
 </form>
 </div>
 
@@ -109,7 +110,7 @@ fieldset{border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin
 <h2>🦶 Ассистент педалей (PAS)</h2>
 <form id="f_pas">
 <fieldset><legend>Ассистент PAS</legend>
-<div class="chk"><label for="pasEn">Включить PAS</label><input type="checkbox" id="pasEn" name="en" ></div>
+<div class="chk"><label for="pasEn" data-i18n="pasOn">Включить PAS</label><input type="checkbox" id="pasEn" name="en" ></div>
 </fieldset>
 <fieldset><legend>Датчик</legend>
 <div class="frow"><label>Магниты</label><input type="number" name="magnets" value=""></div>
@@ -131,15 +132,15 @@ fieldset{border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin
 </fieldset>
 
 <fieldset><legend>Калибровка магнитов</legend>
-<button type="button" onclick="calStart()">Старт калибровки (2 оборота)</button>
-<button type="button" onclick="calStop()">Готово</button>
+<button type="button" onclick="calStart()" data-i18n="start">Старт калибровки (2 оборота)</button>
+<button type="button" onclick="calStop()" data-i18n="ok">Готово</button>
 <div id="calStat" class="cal-status">—</div>
 </fieldset>
 
 <fieldset><legend>Уровни усилия (0-)</legend>
 <div class="frow"><label>Количество уровней</label><input type="number" id="pas_count" name="count" min="0" max="20" value="5" oninput="renderPasLevels()"></div>
 <div id="pas_levels"></div>
-<button type="button" onclick="autoDistributePas()">Автораспределение</button>
+<button type="button" onclick="autoDistributePas()" data-i18n="cruiseAutoDist">Автораспределение</button>
 </fieldset>
 
 <fieldset><legend>Мягкий старт</legend>
@@ -150,13 +151,13 @@ fieldset{border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin
   <option value="2">Выключено</option>
 </select></div>
 <div id="pasCustomBlock">
-<div class="chk"><label for="pasSsEn">Мягкий старт</label><input type="checkbox" id="pasSsEn" name="ssEn" ></div>
+<div class="chk"><label for="pasSsEn" data-i18n="softStart">Мягкий старт</label><input type="checkbox" id="pasSsEn" name="ssEn" ></div>
 <div class="frow"><label>Время разгона, мс</label><input type="number" name="ssMs" value=""></div>
 </div>
 <input type="hidden" name="spEn" value="500">
 <input type="hidden" name="spMs" value="">
 </fieldset>
-<button type="submit">Сохранить PAS</button>
+<button type="submit" data-i18n="save">Сохранить PAS</button>
 </form>
 </div>
 
@@ -201,7 +202,7 @@ fieldset{border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin
   <option value="2">Восстановить</option>
 </select></div>
 </fieldset>
-<button type="submit">Сохранить круиз</button>
+<button type="submit" data-i18n="save">Сохранить круиз</button>
 </form>
 </div>
 
