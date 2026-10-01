@@ -50,7 +50,7 @@ details{margin-top:12px}summary{cursor:pointer;color:var(--ui-muted);font-size:v
 <fieldset><legend data-i18n="serviceMode">Сервисный режим (Anti-Police)</legend>
   <p class="fhint" data-i18n="serviceLimit">Ограничение мощности газа в сервисном режиме (активируется 5 быстрыми нажатиями тормоза).</p>
   <div class="slider-row">
-    <<label for="svcLimit" data-i18n="serviceLimit">Потолок газа:</label> <span class="val" id="svcVal">)rawliteral";
+    <label for="svcLimit" data-i18n="serviceLimit">Потолок газа:</label> <span class="val" id="svcVal">)rawliteral";
   html += String(serviceThrottleLimitPct);
   html += R"rawliteral(%</span></label>
   <input type="range" id="svcLimit" min="10" max="80" value=")rawliteral";
