@@ -15,7 +15,7 @@
 void handleDrivePage() {
   String html = R"rawliteral(<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Управление тягой</title>
+<title data-i18n="drive">Управление тягой</title>
 <style>
 )rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
 #liveV{font-size:var(--ui-fs-h2);font-weight:bold;color:var(--ui-text);display:inline-block;padding:4px 8px;background:var(--ui-button);border-radius:4px;border:1px solid var(--ui-border)}
@@ -27,12 +27,12 @@ void handleDrivePage() {
 .sec-card h2{margin-top:0;font-size:var(--ui-fs-h2);border-bottom:1px solid var(--ui-border);padding-bottom:8px}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + getBackMenuHtml() + R"rawliteral(
-<h1>Управление тягой</h1>
+<h1 data-i18n="drive">Управление тягой</h1>
 <div class="tab-row">
-  <button type="button" class="tab-btn active" onclick="showSec('all',this)">Всё</button>
-  <button type="button" class="tab-btn" onclick="showSec('th',this)">Газ</button>
-  <button type="button" class="tab-btn" onclick="showSec('pas',this)">PAS</button>
-  <button type="button" class="tab-btn" onclick="showSec('cr',this)">Круиз</button>
+  <button type="button" class="tab-btn active" onclick="showSec('all',this)" data-i18n="all">Всё</button>
+  <button type="button" class="tab-btn" onclick="showSec('th',this)" data-i18n="throttle">Газ</button>
+  <button type="button" class="tab-btn" onclick="showSec('pas',this)" data-i18n="pas">PAS</button>
+  <button type="button" class="tab-btn" onclick="showSec('cr',this)" data-i18n="cruise">Круиз</button>
 </div>
 
 <!-- ================= БЛОК 1: ГАЗ ================= -->
@@ -66,7 +66,7 @@ void handleDrivePage() {
 <input type="hidden" name="spMs" value=")rawliteral"; html += String(throttleSoftStopMs); html += R"rawliteral(">
 <p class="fhint">Параметры разгона применяются к ручке газа, а также к PAS и Круизу (при выборе режима «По умолчанию»).</p>
 </fieldset>
-<button type="submit">Сохранить газ</button>
+<button type="submit" data-i18n="save">Сохранить газ</button>
 </form>
 </div>
 )rawliteral";
@@ -77,7 +77,7 @@ void handleDrivePage() {
 <h2>🦶 Ассистент педалей (PAS)</h2>
 <form id="f_pas">
 <fieldset><legend>Ассистент PAS</legend>
-<div class="chk"><label for="pasEn">Включить PAS</label><input type="checkbox" id="pasEn" name="en" )rawliteral"; html += pasEnabled?"checked":""; html += R"rawliteral(></div>
+<div class="chk"><label for="pasEn" data-i18n="pasOn">Включить PAS</label><input type="checkbox" id="pasEn" name="en" )rawliteral"; html += pasEnabled?"checked":""; html += R"rawliteral(></div>
 </fieldset>
 <fieldset><legend>Датчик</legend>
 <div class="frow"><label>Магниты</label><input type="number" name="magnets" value=")rawliteral"; html += String(pasMagnetCount); html += R"rawliteral("></div>
@@ -99,15 +99,15 @@ void handleDrivePage() {
 </fieldset>
 
 <fieldset><legend>Калибровка магнитов</legend>
-<button type="button" onclick="calStart()">Старт калибровки (2 оборота)</button>
-<button type="button" onclick="calStop()">Готово</button>
+<button type="button" onclick="calStart()" data-i18n="start">Старт калибровки (2 оборота)</button>
+<button type="button" onclick="calStop()" data-i18n="ok">Готово</button>
 <div id="calStat" class="cal-status">—</div>
 </fieldset>
 
 <fieldset><legend>Уровни усилия (0-)rawliteral"; html += String(PAS_MAX_LEVELS); html += R"rawliteral()</legend>
 <div class="frow"><label>Количество уровней</label><input type="number" id="pas_count" name="count" min="0" max=")rawliteral"; html += String(PAS_MAX_LEVELS); html += R"rawliteral(" value=")rawliteral"; html += String(pasLevelsCount); html += R"rawliteral(" oninput="renderPasLevels()"></div>
 <div id="pas_levels"></div>
-<button type="button" onclick="autoDistributePas()">Автораспределение</button>
+<button type="button" onclick="autoDistributePas()" data-i18n="cruiseAutoDist">Автораспределение</button>
 </fieldset>
 
 <fieldset><legend>Мягкий старт</legend>
@@ -118,13 +118,13 @@ void handleDrivePage() {
   <option value="2")rawliteral"; html += (pasSmoothMode == 2 ? " selected" : ""); html += R"rawliteral(>Выключено</option>
 </select></div>
 <div id="pasCustomBlock">
-<div class="chk"><label for="pasSsEn">Мягкий старт</label><input type="checkbox" id="pasSsEn" name="ssEn" )rawliteral"; html += pasSoftStartEnabled?"checked":""; html += R"rawliteral(></div>
+<div class="chk"><label for="pasSsEn" data-i18n="softStart">Мягкий старт</label><input type="checkbox" id="pasSsEn" name="ssEn" )rawliteral"; html += pasSoftStartEnabled?"checked":""; html += R"rawliteral(></div>
 <div class="frow"><label>Время разгона, мс</label><input type="number" name="ssMs" value=")rawliteral"; html += String(pasSoftStartMs); html += R"rawliteral("></div>
 </div>
 <input type="hidden" name="spEn" value=")rawliteral"; html += pasSoftStopEnabled ? "1" : "0"; html += R"rawliteral(">
 <input type="hidden" name="spMs" value=")rawliteral"; html += String(pasSoftStopMs); html += R"rawliteral(">
 </fieldset>
-<button type="submit">Сохранить PAS</button>
+<button type="submit" data-i18n="save">Сохранить PAS</button>
 </form>
 </div>
 )rawliteral";
@@ -172,7 +172,7 @@ void handleDrivePage() {
   <option value="2")rawliteral"; html += (cruiseAfterThrottleMode == 2 ? " selected" : ""); html += R"rawliteral(>Восстановить</option>
 </select></div>
 </fieldset>
-<button type="submit">Сохранить круиз</button>
+<button type="submit" data-i18n="save">Сохранить круиз</button>
 </form>
 </div>
 )rawliteral";

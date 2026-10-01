@@ -14,13 +14,13 @@ void handleThrottlePage() {
   String html = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Газ</title>
+<title data-i18n="drive">Газ</title>
 <style>
 )rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
 #liveV{font-size:var(--ui-fs-h2);font-weight:bold;color:var(--ui-text);display:inline-block;padding:4px 8px;background:var(--ui-button);border-radius:4px;border:1px solid var(--ui-border)}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + getBackMenuHtml() + R"rawliteral(
-<h1>Газ</h1>
+<h1 data-i18n="drive">Газ</h1>
 <form id="f">
 <fieldset><legend>Калибровка (в реальных вольтах на проводах)</legend>
 <p class="fhint">Напряжение измеряется на проводах ручки газа и входа контроллера. Делитель и усилитель уже учтены.</p>
@@ -30,12 +30,12 @@ void handleThrottlePage() {
 <div class="frow"><label for="inMinV">Вход минимум, В</label><input type="number" step="0.01" min="0" max="5" id="inMinV" name="inMinV" value=")rawliteral"; html += String(throttleInMinV, 2);
   html += R"rawliteral("></div>
 <p class="fhint">Напряжение ручки газа в покое.</p>
-<button type="button" class="cal-btn" onclick="calMin()">Захватить минимум (ручка отпущена)</button>
+<button type="button" class="cal-btn" onclick="calMin()" data-i18n="driveCalMin">Захватить минимум (ручка отпущена)</button>
 
 <div class="frow"><label for="inMaxV">Вход максимум, В</label><input type="number" step="0.01" min="0" max="5" id="inMaxV" name="inMaxV" value=")rawliteral"; html += String(throttleInMaxV, 2);
   html += R"rawliteral("></div>
 <p class="fhint">Напряжение ручки на полном газу.</p>
-<button type="button" class="cal-btn" onclick="calMax()">Захватить максимум (полный газ)</button>
+<button type="button" class="cal-btn" onclick="calMax()" data-i18n="driveCalMax">Захватить максимум (полный газ)</button>
 
 <div class="frow"><label>Выход минимум, В</label><input type="number" step="0.05" min="0" max="5" name="outMinV" value=")rawliteral"; html += String(throttleOutMinV, 2);
   html += R"rawliteral("></div>
@@ -64,7 +64,7 @@ void handleThrottlePage() {
   html += R"rawliteral(">
 <p class="fhint">Эти настройки применяются к ручке газа, а также к PAS и Круизу, если там выбран режим «По умолчанию».</p>
 </fieldset>
-<button type="submit">Сохранить</button>
+<button type="submit" data-i18n="save">Сохранить</button>
 </form>
 <script>
 document.getElementById('f').addEventListener('submit',function(e){

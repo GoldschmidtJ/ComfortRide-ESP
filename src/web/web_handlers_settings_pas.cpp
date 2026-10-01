@@ -13,22 +13,22 @@ void handlePasPage() {
   String html = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PAS</title>
+<title data-i18n="pas">PAS</title>
 <style>
 )rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
 .cal-status{margin-top:8px;font-weight:bold}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + getBackMenuHtml() + R"rawliteral(
-<h1>PAS</h1>
+<h1 data-i18n="pas">PAS</h1>
 <form id="f">
 <fieldset><legend>Ассистент PAS</legend>
-<div class="chk"><label for="pasEn">Включить PAS</label><input type="checkbox" id="pasEn" name="en" )rawliteral"; html += pasEnabled?"checked":"";
+<div class="chk"><label for="pasEn" data-i18n="pasOn">Включить PAS</label><input type="checkbox" id="pasEn" name="en" )rawliteral"; html += pasEnabled?"checked":"";
   html += R"rawliteral(></div>
 </fieldset>
 <fieldset><legend>Датчик</legend>
 <div class="frow"><label>Магниты</label><input type="number" name="magnets" value=")rawliteral"; html += String(pasMagnetCount);
   html += R"rawliteral("></div>
-<p class="fhint">Количество магнитов на диске PAS.</p>
+<p class="fhint" data-i18n="pasMagnets">Количество магнитов на диске PAS.</p>
 <div class="frow"><label>Фронт сигнала</label>
 <select name="edge">
 <option value="2")rawliteral"; html += (pasEdgeMode==FALLING?" selected":"");
@@ -38,7 +38,7 @@ void handlePasPage() {
 <option value="1")rawliteral"; html += (pasEdgeMode==CHANGE?" selected":"");
   html += R"rawliteral(>При любом изменении (CHANGE)</option>
 </select></div>
-<p class="fhint">Событие датчика, которое считается импульсом.</p>
+<p class="fhint" data-i18n="pasEdge">Событие датчика, которое считается импульсом.</p>
 <div class="frow"><label>Угол активации</label>
 <select name="angle">
 <option value="90")rawliteral"; html += (pasActivationAngle==90?" selected":"");
@@ -50,19 +50,19 @@ void handlePasPage() {
 <option value="360")rawliteral"; html += (pasActivationAngle==360?" selected":"");
   html += R"rawliteral(>360&deg;</option>
 </select></div>
-<p class="fhint">Поворот педалей до включения тяги.</p>
+<p class="fhint" data-i18n="pasAngle">Поворот педалей до включения тяги.</p>
 <div class="frow"><label>Память импульса, мс</label><input type="number" name="timeout" value=")rawliteral"; html += String(pasTimeoutMs);
   html += R"rawliteral("></div>
-<p class="fhint">Как долго счётчик помнит вращение при медленном педалировании.</p>
+<p class="fhint" data-i18n="pasTimeout">Как долго счётчик помнит вращение при медленном педалировании.</p>
 <div class="frow"><label>Остановка, мс</label><input type="number" name="stopTO" value=")rawliteral"; html += String(pasStopTimeoutMs);
   html += R"rawliteral("></div>
-<p class="fhint">Как быстро отключить тягу после остановки педалей.</p>
+<p class="fhint" data-i18n="pasStopTO">Как быстро отключить тягу после остановки педалей.</p>
 </fieldset>
 
 <fieldset><legend>Калибровка магнитов</legend>
-<p class="hint">Нажми «Старт», проверни педали ровно на 2 полных оборота, затем нажми «Готово» (или подожди 3 с после остановки — калибровка завершится сама). Количество магнитов будет посчитано и сохранено.</p>
-<button type="button" onclick="calStart()">Старт</button>
-<button type="button" onclick="calStop()">Готово</button>
+<p class="hint" data-i18n="pasCalHint">Нажми «Старт», проверни педали ровно на 2 полных оборота, затем нажми «Готово» (или подожди 3 с после остановки — калибровка завершится сама). Количество магнитов будет посчитано и сохранено.</p>
+<button type="button" onclick="calStart()" data-i18n="start">Старт</button>
+<button type="button" onclick="calStop()" data-i18n="ok">Готово</button>
 <div id="calStat" class="cal-status">—</div>
 </fieldset>
 

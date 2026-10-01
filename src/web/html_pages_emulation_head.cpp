@@ -100,8 +100,8 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
 </div>
 
 <div class="header">
-  <p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>
-  <h1>Эмуляция управления</h1>
+  <p class="back-row"><a class="back-link" href="/" data-i18n="backMenu">&larr; Меню</a></p>
+  <h1 data-i18n="emulation">Эмуляция управления</h1>
   <div class="version">v0.4.0 &bull; 16&times;32 LED Matrix</div>
 </div>
 
@@ -113,7 +113,7 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
   <div class="simulator-layout">
     <div class="sim-left-col">
       <div class="joystick-panel" id="joystickPanel">
-        <div class="sim-section-title">Джойстик</div>
+        <div class="sim-section-title" data-i18n="joystick">Джойстик</div>
         <div class="joy-screen" id="joyScreen">
           <div class="screen-mode" id="joyMode">PAS</div>
           <div class="screen-val" id="joyVal">УРОВЕНЬ 1</div>
@@ -129,26 +129,26 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
       </div>
       <div class="sim-btns-group" id="simControlsPanel">
         <button type="button" class="sim-side-btn" id="btnSimBrake">
-          <span class="sim-btn-ico">[ • ]</span><span>Тормоз</span>
+          <span class="sim-btn-ico">[ • ]</span><span data-i18n="brake">Тормоз</span>
         </button>
         <button type="button" class="sim-side-btn pedal-btn" id="btnSimPedal">
-          <span class="sim-btn-ico">&#129461;</span><span>Педали</span>
+          <span class="sim-btn-ico">&#129461;</span><span data-i18n="pedals">Педали</span>
         </button>
       </div>
       <div class="sim-btns-group" id="simLightsPanel">
         <button type="button" class="sim-side-btn" id="btnSimTurnL" title="Левый поворотник">
-          <span class="sim-btn-ico">&#8626;</span><span>Пов. L</span>
+          <span class="sim-btn-ico">&#8626;</span><span data-i18n="turnL">Пов. L</span>
         </button>
         <button type="button" class="sim-side-btn" id="btnSimTurnR" title="Правый поворотник">
-          <span class="sim-btn-ico">&#8627;</span><span>Пов. R</span>
+          <span class="sim-btn-ico">&#8627;</span><span data-i18n="turnR">Пов. R</span>
         </button>
         <button type="button" class="sim-side-btn" id="btnSimLight" title="Циклический выбор режима света">
-          <span class="sim-btn-ico">&#9788;</span><span id="lblSimLight">Свет</span>
+          <span class="sim-btn-ico">&#9788;</span><span id="lblSimLight" data-i18n="light">Свет</span>
         </button>
       </div>
     </div>
     <div class="sim-throttle-group">
-      <span class="sim-throttle-label">Газ</span>
+      <span class="sim-throttle-label" data-i18n="throttle">Газ</span>
       <input type="range" min="0" max="100" value="0" orient="vertical" class="sim-slider-vert" id="simGas">
       <span class="sim-throttle-val" id="lblGas">0%</span>
     </div>

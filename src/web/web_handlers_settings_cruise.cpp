@@ -15,29 +15,29 @@ void handleCruisePage() {
   String html = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Круиз</title>
+<title data-i18n="cruise">Круиз</title>
 <style>
 )rawliteral" + getTopBarCss() + getSettingsCss() + R"rawliteral(
 </style></head><body>
 )rawliteral" + getTopBarHtml() + getBackMenuHtml() + R"rawliteral(
-<h1>Круиз</h1>
+<h1 data-i18n="cruise">Круиз</h1>
 <form id="f">
 <fieldset><legend>Уровни</legend>
-<div class="frow"><label>Количество уровней (1–100)</label>
+<div class="frow"><label data-i18n="cruiseLevels">Количество уровней (1–100)</label>
 <input type="number" id="count" name="count" min="1" max="100" value=")rawliteral"; 
   html += String(cruiseLevelsCount);
   html += R"rawliteral(" oninput="autoDistribute()"></div>
 
-<div class="frow"><label for="stPct">Начало, %</label>
+<div class="frow"><label for="stPct" data-i18n="cruiseStart">Начало, %</label>
 <input type="number" id="stPct" name="stPct" step="1" min="0" max="100" oninput="autoDistribute()" value=")rawliteral";
   html += String((int)round(cruiseStartPercent));
   html += R"rawliteral("></div>
-<div class="frow"><label for="endPct">Конец, %</label>
+<div class="frow"><label for="endPct" data-i18n="cruiseEnd">Конец, %</label>
 <input type="number" id="endPct" name="endPct" step="1" min="0" max="100" oninput="autoDistribute()" value=")rawliteral";
   html += String((int)round(cruiseEndPercent));
   html += R"rawliteral("></div>
 
-<p class="fhint">Значения распределяются автоматически при изменении диапазона или количества.</p>
+<p class="fhint" data-i18n="cruiseAutoDist">Значения распределяются автоматически при изменении диапазона или количества.</p>
 <div id="levels" class="levels"></div>
 </fieldset>
 <fieldset><legend>Мягкий старт</legend>
@@ -48,10 +48,10 @@ void handleCruisePage() {
   <option value="2")rawliteral"; html += (cruiseSmoothMode == 2 ? " selected" : ""); html += R"rawliteral(>Выключено</option>
 </select></div>
 <div id="cruiseCustomBlock">
-<div class="chk"><label for="cruiseSsEn">Мягкий старт</label><input type="checkbox" id="cruiseSsEn" name="ssEn" )rawliteral";
+<div class="chk"><label for="cruiseSsEn" data-i18n="softStart">Мягкий старт</label><input type="checkbox" id="cruiseSsEn" name="ssEn" )rawliteral";
   html += cruiseSoftStartEnabled ? "checked" : "";
   html += R"rawliteral(></div>
-<div class="frow"><label>Время разгона, мс</label><input type="number" name="ssMs" value=")rawliteral";
+<div class="frow"><label data-i18n="cruiseSsMs">Время разгона, мс</label><input type="number" name="ssMs" value=")rawliteral";
   html += String(cruiseSoftStartMs);
   html += R"rawliteral("></div>
 </div>
@@ -63,17 +63,17 @@ void handleCruisePage() {
   html += R"rawliteral(">
 </fieldset>
 <fieldset><legend>Поведение</legend>
-<div class="chk"><label for="confThr">Подтверждать газом после старта</label><input type="checkbox" id="confThr" name="confThr" )rawliteral";
+<div class="chk"><label for="confThr" data-i18n="cruiseAfterStart">Подтверждать газом после старта</label><input type="checkbox" id="confThr" name="confThr" )rawliteral";
   html += cruiseConfirmThrottleAfterStart ? "checked" : "";
   html += R"rawliteral(></div>
-<div class="frow"><label>После торможения</label>
+<div class="frow"><label data-i18n="cruiseAfterBrake">После торможения</label>
 <select name="brkMode">
   <option value="0")rawliteral"; html += (cruiseAfterBrakingMode == 0 ? " selected" : ""); html += R"rawliteral(>Сброс круиза</option>
   <option value="1")rawliteral"; html += (cruiseAfterBrakingMode == 1 ? " selected" : ""); html += R"rawliteral(>Подтверждение газом</option>
   <option value="2")rawliteral"; html += (cruiseAfterBrakingMode == 2 ? " selected" : ""); html += R"rawliteral(>Восстановить</option>
 </select></div>
-<p class="fhint">Сброс: требуется нажатие ОК и газ. Подтверждение: нужно снова выжать газ. Восстановление: вернуться к прежнему значению (осторожно!).</p>
-<div class="frow"><label>После перегазовки</label>
+<p class="fhint" data-i18n="cruiseBrakeHint">Сброс: требуется нажатие ОК и газ. Подтверждение: нужно снова выжать газ. Восстановление: вернуться к прежнему значению (осторожно!).</p>
+<div class="frow"><label data-i18n="cruiseAfterThrottle">После перегазовки</label>
 <select name="thrMode">
   <option value="0")rawliteral"; html += (cruiseAfterThrottleMode == 0 ? " selected" : ""); html += R"rawliteral(>Сброс круиза</option>
   <option value="1")rawliteral"; html += (cruiseAfterThrottleMode == 1 ? " selected" : ""); html += R"rawliteral(>Подтверждение газом</option>
@@ -81,7 +81,7 @@ void handleCruisePage() {
 </select></div>
 <p class="fhint">Действие после кратковременного увеличения газа поверх круиза.</p>
 </fieldset>
-<button type="submit">Сохранить</button>
+<button type="submit" data-i18n="save">Сохранить</button>
 </form>
 )rawliteral" + getSettingsJs() + R"rawliteral(<script>
 const saved = [)rawliteral";
