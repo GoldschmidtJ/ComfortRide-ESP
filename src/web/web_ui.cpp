@@ -64,6 +64,79 @@ function distributeLevels(values,count,start=0,end=100) {
 )rawliteral");
 }
 
+String getI18nJs() {
+  return String(R"rawliteral(
+<script>
+var I18N = {
+  ru: {
+    system: "Система",
+    odometer: "Пробег",
+    resetOdometer: "Сбросить пробег",
+    odometerKm: "км",
+    serviceMode: "Сервисный режим (Anti-Police)",
+    serviceLimit: "Потолок газа",
+    pct: "%",
+    active: "АКТИВЕН",
+    off: "выключен",
+    save: "Сохранить",
+    exportFile: "Скачать настройки (JSON)",
+    importFile: "Загрузить из файла",
+    importText: "Импортировать текст",
+    firmware: "Прошивка",
+    updateFirmware: "Обновление прошивки",
+    reset: "Сброс",
+    factoryReset: "Заводской сброс",
+    resetConfirm: "Сбросить все настройки?",
+    resetDone: "Заводские настройки восстановлены. Перезагрузка...",
+    settings: "Настройки",
+    throttle: "Газ",
+    pas: "PAS",
+    cruise: "Cruise",
+    all: "Всё"
+  },
+  en: {
+    system: "System",
+    odometer: "Odometer",
+    resetOdometer: "Reset odometer",
+    odometerKm: "km",
+    serviceMode: "Service Mode (Anti-Police)",
+    serviceLimit: "Throttle limit",
+    pct: "%",
+    active: "ACTIVE",
+    off: "off",
+    save: "Save",
+    exportFile: "Download settings (JSON)",
+    importFile: "Upload file",
+    importText: "Paste JSON",
+    firmware: "Firmware",
+    updateFirmware: "Update firmware",
+    reset: "Reset",
+    factoryReset: "Factory reset",
+    resetConfirm: "Reset all settings?",
+    resetDone: "Factory settings restored. Rebooting...",
+    settings: "Settings",
+    throttle: "Gas",
+    pas: "PAS",
+    cruise: "Cruise",
+    all: "All"
+  }
+};
+var UI_LANG = (localStorage.getItem('bike_ui_lang') || 'ru');
+function t(key){ var d = I18N[UI_LANG] || I18N.ru; return d[key] || key; }
+function applyI18n(){
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    var key = el.getAttribute('data-i18n');
+    if (key && I18N[UI_LANG] && I18N[UI_LANG][key]) el.textContent = I18N[UI_LANG][key];
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(function(el){
+    var key = el.getAttribute('data-i18n-title');
+    if (key && I18N[UI_LANG] && I18N[UI_LANG][key]) el.title = I18N[UI_LANG][key];
+  });
+}
+function setUiLang(lang){ localStorage.setItem('bike_ui_lang', lang); UI_LANG = lang; applyI18n(); }
+</script>
+)rawliteral"); }
+
 // Единая кнопка возврата в меню: одинаковые класс, метка и отступ на всех
 // страницах. Вызов сразу после getTopBarHtml(), перед <h1>.
 String getBackMenuHtml() {
