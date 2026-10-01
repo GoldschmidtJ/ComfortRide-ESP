@@ -36,3 +36,4 @@ bootloader/
 esp32/
 sdk/
 
+compile_commands.json
