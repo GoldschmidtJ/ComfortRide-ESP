@@ -22,13 +22,13 @@ canvas{background:var(--ui-black);border:1px solid var(--ui-border);border-radiu
 a{color:var(--ui-accent)}
 </style></head><body>
 <p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>
-<h1>Отладка (мини-осциллограф)</h1>
+<h1 data-i18n="debugTitle">Отладка (мини-осциллограф)</h1>
 <div class="debug-tools">
-  <span class="tool-label">Масштаб времени:</span>
-  <button type="button" class="tbtn" onclick="setTimeScale(1)" id="tb1">1с</button>
-  <button type="button" class="tbtn" onclick="setTimeScale(3)" id="tb3">3с</button>
+  <span class="tool-label" data-i18n="timeScale">Масштаб времени:</span>
+  <button type="button" class="tbtn" onclick="setTimeScale(1)" id="tb1" data-i18n="timeScale1">1с</button>
+  <button type="button" class="tbtn" onclick="setTimeScale(3)" id="tb3" data-i18n="timeScale3">3с</button>
   <button type="button" class="tbtn selected" onclick="setTimeScale(5)" id="tb5">5с</button>
-  <button type="button" class="tbtn" onclick="setTimeScale(10)" id="tb10">10с</button>
+  <button type="button" class="tbtn" onclick="setTimeScale(10)" id="tb10" data-i18n="timeScale10">10с</button>
   <button type="button" class="tbtn" onclick="setTimeScale(30)" id="tb30">30с</button>
   <label class="osc-toggle">
     <input type="checkbox" id="chkOscilloscope" onchange="updateOscilloscopeState()"> Запускать осциллограф
