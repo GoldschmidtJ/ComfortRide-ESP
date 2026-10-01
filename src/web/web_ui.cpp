@@ -241,6 +241,9 @@ var I18N = {
     pullUp: "Подтяжка",
     pwmHz: "Частота ШИМ",
     adcAtt: "Аттенюация",
+    timeScale1: "1с",
+    timeScale3: "3с",
+    timeScale10: "10с",
   },
   en: {
     system: "System",
@@ -415,6 +418,9 @@ var I18N = {
     pullUp: "Pullup",
     pwmHz: "PWM Hz",
     adcAtt: "Atten",
+    timeScale1: "1s",
+    timeScale3: "3s",
+    timeScale10: "10s",
   }
 };
 var UI_LANG = (localStorage.getItem('bike_ui_lang') || 'ru');
