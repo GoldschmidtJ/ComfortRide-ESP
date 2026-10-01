@@ -24,14 +24,14 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
   <div class="tb-item" title="Температура процессора"><span>Temp:</span> <b id="tbTemp">--°C</b></div>
   <div class="tb-item u-dim" title="Bluetooth не используется"><span>BT:</span> <span class="tb-dot dot-gray"></span> <span>Выкл</span></div>
 </div>
-<div class="header"><h1>OpenBike Controller</h1><div class="version">v0.4.0</div></div>
+<div class="header"><h1 data-i18n="hub">OpenBike Controller</h1><div class="version">v0.4.0</div></div>
 <a class="card primary" href="/emulation">Эмуляция дисплея и пульта &rarr;</a>
-<a class="card" href="/settings/drive">Управление тягой (Газ · PAS · Круиз) &rarr;</a>
-<a class="card" href="/settings/pins">GPIO &rarr;</a>
-<a class="card" href="/settings/events">События &rarr;</a>
-<a class="card" href="/wifi">Сеть &rarr;</a>
-<a class="card" href="/debug">Отладка &rarr;</a>
-<a class="card" href="/system">Система</a>
+<a class="card" href="/settings/drive" data-i18n="drive">Управление тягой (Газ · PAS · Круиз) &rarr;</a>
+<a class="card" href="/settings/pins" data-i18n="pins">GPIO &rarr;</a>
+<a class="card" href="/settings/events" data-i18n="events">События &rarr;</a>
+<a class="card" href="/wifi" data-i18n="network">Сеть &rarr;</a>
+<a class="card" href="/debug" data-i18n="debug">Отладка &rarr;</a>
+<a class="card" href="/system" data-i18n="system">Система</a>
 <script>
 let statusBusy=false;
 function updateSysStatus(){
