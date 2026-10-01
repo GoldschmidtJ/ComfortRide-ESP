@@ -1,7 +1,8 @@
 #include "web/html_pages_topbar.h"
+#include "web/web_ui.h" // getI18nJs
 
 
-String getTopBarJs() { return String(R"rawliteral(
+String getTopBarJs() { return getI18nJs() + String(R"rawliteral(
 <script>
 let statusErrCount = 0;
 let statusBusy = false;

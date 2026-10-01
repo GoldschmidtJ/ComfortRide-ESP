@@ -481,15 +481,20 @@ function applyI18n(){
     if (key && I18N[UI_LANG] && I18N[UI_LANG][key]) el.title = I18N[UI_LANG][key];
   });
 }
-function setUiLang(lang){ localStorage.setItem('bike_ui_lang', lang); UI_LANG = lang; applyI18n(); }
-document.addEventListener('DOMContentLoaded', applyI18n);
+function updateLangBtn(){
+  var btn = document.getElementById('tbLangBtn');
+  if (btn) btn.textContent = UI_LANG.toUpperCase();
+}
+function setUiLang(lang){ localStorage.setItem('bike_ui_lang', lang); UI_LANG = lang; applyI18n(); updateLangBtn(); }
+function toggleUiLang(){ setUiLang(UI_LANG === 'ru' ? 'en' : 'ru'); }
+document.addEventListener('DOMContentLoaded', function(){ applyI18n(); updateLangBtn(); });
 </script>
 )rawliteral"); }
 
 // Единая кнопка возврата в меню: одинаковые класс, метка и отступ на всех
 // страницах. Вызов сразу после getTopBarHtml(), перед <h1>.
 String getBackMenuHtml() {
-  return String(R"rawliteral(<p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>
+  return String(R"rawliteral(<p class="back-row"><a class="back-link" href="/" data-i18n="backMenu">&larr; Меню</a></p>
 )rawliteral");
 }
 
@@ -518,6 +523,7 @@ String getTopBarHtml() {
     <span class="tb-dot dot-gray"></span>
     <span class="u-muted">Выкл</span>
   </div>
+  <button type="button" class="tb-item tb-link" id="tbLangBtn" onclick="toggleUiLang()" style="cursor:pointer;font-weight:700" title="Switch language">RU</button>
 </div>
 )rawliteral");
 }
