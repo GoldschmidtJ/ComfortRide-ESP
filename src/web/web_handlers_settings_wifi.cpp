@@ -27,26 +27,26 @@ h2{font-size:15px;margin-top:0;color:var(--ui-muted);border-bottom:1px solid var
 .message-success{color:var(--ui-success)}.message-error{color:var(--ui-danger)}.form-gap{margin-top:15px}.block-gap{margin-top:10px}.status-gap{margin-top:8px}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + getBackMenuHtml() + R"rawliteral(
-<h1>Связь и сеть</h1>
+<h1 data-i18n="network">Связь и сеть</h1>
 
 <div class="panel">
-  <h2>Подключение к Wi-Fi (Клиент)</h2>
-  <div class="status" id="wifi_status">Текущий статус: )rawliteral";
+  <h2 data-i18n="wifiTitle">Подключение к Wi-Fi (Клиент)</h2>
+  <div class="status" id="wifi_status" data-i18n="wifiStatus">Текущий статус: )rawliteral";
   html += (WiFi.status() == WL_CONNECTED) ? ("<b>Подключено к " + WiFi.SSID() + "</b> (IP: " + WiFi.localIP().toString() + ")") : "<i>Не подключено к внешней сети</i>";
   html += R"rawliteral(</div>
 
-  <button type="button" onclick="scan()">Найти доступные сети</button>
+  <button type="button" onclick="scan()" data-i18n="scanNetworks">Найти доступные сети</button>
   <div id="nets" class="block-gap"></div>
 
   <form id="f_wifi" class="form-gap">
-    <div class="frow"><label for="ssid">SSID</label><input type="text" id="ssid" name="ssid" placeholder="Сеть или вручную"></div>
-    <div class="frow"><label for="pass">Пароль</label><input type="password" id="pass" name="pass" placeholder="Пароль Wi-Fi"></div>
-    <button type="submit">Подключиться к Wi-Fi</button>
+    <div class="frow"><label for="ssid" data-i18n="ssid">SSID</label><input type="text" id="ssid" name="ssid" placeholder="Сеть или вручную"></div>
+    <div class="frow"><label for="pass" data-i18n="password">Пароль</label><input type="password" id="pass" name="pass" placeholder="Пароль Wi-Fi"></div>
+    <button type="submit" data-i18n="connectWifi">Подключиться к Wi-Fi</button>
   </form>
 </div>
 
 <div class="panel">
-  <h2>Настройки точки доступа (AP)</h2>
+  <h2 data-i18n="apTitle">Настройки точки доступа (AP)</h2>
   <div class="status">
     Режим точки доступа: <b>активен</b><br>
     IP-адрес точки: <b>)rawliteral";
@@ -55,16 +55,16 @@ h2{font-size:15px;margin-top:0;color:var(--ui-muted);border-bottom:1px solid var
   </div>
 
   <form id="f_ap" class="form-gap">
-    <div class="frow"><label for="ap_ssid">SSID точки</label><input type="text" id="ap_ssid" name="ap_ssid" value=")rawliteral";
+    <div class="frow"><label for="ap_ssid" data-i18n="apSsid">SSID точки</label><input type="text" id="ap_ssid" name="ap_ssid" value=")rawliteral";
   html += htmlEscape(storedApSsid);
   html += R"rawliteral("></div>
 
-    <div class="frow"><label for="ap_pass">Пароль точки</label><input type="text" id="ap_pass" name="ap_pass" value=")rawliteral";
+    <div class="frow"><label for="ap_pass" data-i18n="apPass">Пароль точки</label><input type="text" id="ap_pass" name="ap_pass" value=")rawliteral";
   html += htmlEscape(storedApPass);
   html += R"rawliteral(" placeholder="пусто = открытая сеть"></div>
     <p class="fhint">Пароль отображается открыто. Оставьте пустым для открытой точки (без пароля). Для WPA2 нужно минимум 8 символов.</p>
 
-    <button type="submit">Сохранить настройки точки доступа</button>
+    <button type="submit" data-i18n="saveAp">Сохранить AP</button>
   </form>
   <div id="ap_status" class="status status-gap"></div>
 </div>
