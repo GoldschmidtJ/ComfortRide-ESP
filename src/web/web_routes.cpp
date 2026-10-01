@@ -107,6 +107,8 @@ void initWebRoutes(WebServer& server) {
   // urlencoded POST с полем settingsFile (вставка JSON вручную / curl).
   server.on("/system/import", HTTP_POST, handleSettingsImport, handleSettingsUpload);
   server.on("/system/factory-reset", HTTP_POST, handleSystemFactoryReset);
+  server.on("/system/odometer/reset", HTTP_POST, handleSystemOdometerReset);
+  server.on("/system/service/save", HTTP_POST, handleSystemServiceSave);
   
   // Телеметрия и статус
   server.on("/status/sys", HTTP_GET, handleSystemStatus);

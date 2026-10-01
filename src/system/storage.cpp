@@ -252,6 +252,42 @@ void eventSettingsReset(){
   eventSettingsSave();
 }
 
+// ================= Пробег =================
+static const char *ODOM_NAMESPACE = "odom";
+static const char *ODOM_KEY_KM = "km";
+float odometerKm = 0.0f;
+
+void odometerLoad() {
+  prefs.begin(ODOM_NAMESPACE, true);
+  odometerKm = prefs.getFloat(ODOM_KEY_KM, 0.0f);
+  prefs.end();
+}
+
+void odometerSave() {
+  prefs.begin(ODOM_NAMESPACE, false);
+  prefs.putFloat(ODOM_KEY_KM, odometerKm);
+  prefs.end();
+}
+
+void odometerReset() {
+  odometerKm = 0.0f;
+  odometerSave();
+}
+
+// ================= Сервисный режим (serviceThrottleLimitPct) =================
+
+void serviceSettingsSave() {
+  prefs.begin("service", false);
+  prefs.putInt("limit", serviceThrottleLimitPct);
+  prefs.end();
+}
+
+void serviceSettingsLoad() {
+  prefs.begin("service", true);
+  serviceThrottleLimitPct = constrain(prefs.getInt("limit", 30), 10, 80);
+  prefs.end();
+}
+
 // ================= WiFi (STA режим) =================
 
 void wifiCredsLoad() {

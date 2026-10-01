@@ -10,6 +10,9 @@
 // Единственный экземпляр NVS-хранилища, используется всеми Save/Load
 extern Preferences prefs;
 
+// Пробег (odometer)
+extern float odometerKm;
+
 // ================= Сохранённые сетевые реквизиты (определения в storage.cpp) =================
 extern String storedSsid;
 extern String storedPass;
@@ -39,6 +42,15 @@ void cruiseSettingsLoad();
 bool eventSettingsSave();
 void eventSettingsLoad();
 void eventSettingsReset();
+
+// ================= Сервисный режим (serviceThrottleLimitPct) =================
+void serviceSettingsSave();
+void serviceSettingsLoad();
+
+// ================= Пробег (odometer) =================
+void odometerLoad();
+void odometerSave();
+void odometerReset();
 
 // ================= WiFi (STA режим) =================
 void wifiCredsLoad();

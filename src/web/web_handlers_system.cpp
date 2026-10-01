@@ -7,10 +7,12 @@
 #include "utils/utils.h"        // htmlEscape
 #include "core/throttle.h"      // setThrottleOutputSafeZero, factoryResetInProgress, hwThrottle*
 #include "nvs_flash.h"          // nvs_flash_erase/nvs_flash_init (заводской сброс)
+#include "system/events_engine.h" // serviceModeActive, serviceThrottleLimitPct
+#include "system/storage.h"     // odometerKm, odometerReset, odometerLoad, odometerSave
+#include "system/cpu_profile.h" // cpuUsagePercent
 
 // ================= Главная страница (хаб) =================
 void handleHub() { sendHubPage(server); }
-
 
 void handleSystemPage() {
   String msg = server.arg("msg");
@@ -30,40 +32,82 @@ input[type=file]{padding:8px;border-style:dashed;cursor:pointer}
 .banner{padding:10px 12px;border-radius:var(--ui-radius);border:1px solid var(--ui-success);background:var(--ui-success-soft);color:var(--ui-success);font-size:var(--ui-fs-mid)}
 .banner.bad{border-color:var(--ui-danger);background:var(--ui-danger-soft);color:var(--ui-danger)}
 details{margin-top:12px}summary{cursor:pointer;color:var(--ui-muted);font-size:var(--ui-fs-mid);padding:4px 0}
+.slider-row{display:flex;align-items:center;gap:10px;margin:8px 0}
+.slider-row input[type=range]{flex:1}
+.slider-row .val{min-width:50px;text-align:right;font-weight:bold}
+.odometer{font-size:var(--ui-fs-h2);font-weight:bold;color:var(--ui-accent)}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + getBackMenuHtml() +R"rawliteral(
 <h1>Система</h1>
 )rawliteral" + banner + R"rawliteral(
+<fieldset><legend>Пробег</legend>
+  <p class="odometer" id="odomVal">-- км</p>
+  <form id="fOdomReset" onsubmit="return confirm('Сбросить пробег до 0?')">
+    <button type="submit" class="danger">Сбросить пробег</button>
+  </form>
+  <p class="fhint">Общий пробег хранится в NVS, сбрасывается только вручную.</p>
+</fieldset>
+<fieldset><legend>Сервисный режим (Anti-Police)</legend>
+  <p class="fhint">Ограничение мощности газа в сервисном режиме (активируется 5 быстрыми нажатиями тормоза).</p>
+  <div class="slider-row">
+    <label for="svcLimit">Потолок газа: <span class="val" id="svcVal">)rawliteral";
+  html += String(serviceThrottleLimitPct);
+  html += R"rawliteral(%</span></label>
+  <input type="range" id="svcLimit" min="10" max="80" value=")rawliteral";
+  html += String(serviceThrottleLimitPct);
+  html += R"rawliteral( step="5" oninput="document.getElementById('svcVal').textContent=this.value+'%'">
+  </div>
+  <button type="button" id="btnSvcSave">Сохранить</button>
+  <p class="fhint">Текущее состояние сервисного режима: )rawliteral";
+  html += String(serviceModeActive ? "АКТИВЕН" : "выключен");
+  html += R"rawliteral(</p>
+</fieldset>
 <fieldset><legend>Файл настроек</legend>
-<p class="fhint">Экспорт сохраняет все параметры одним JSON-файлом: газ, PAS, круиз, GPIO, Wi-Fi, AP и события. Импорт читает такой файл обратно и перезагружает плату.</p>
-<p><a class="card" href="/system/export" download="bike_controller_settings.json">&#8681; Скачать настройки (JSON)</a></p>
-<form method="POST" action="/system/import" enctype="multipart/form-data">
-<label for="settingsFileInput">Файл настроек (.json)</label>
-<input type="file" id="settingsFileInput" name="settingsFile" accept=".json,application/json,text/json" required>
-<button type="submit">Загрузить из файла</button>
-</form>
-<details><summary>Вставить JSON вручную</summary>
-<form method="POST" action="/system/import">
-<label for="settingsJson">JSON настроек</label>
-<textarea id="settingsJson" name="settingsFile" rows="8" placeholder='{"throttle":{...},"pas":{...}}'></textarea>
-<button type="submit">Импортировать текст</button>
-</form>
-</details>
+  <p class="fhint">Экспорт сохраняет все параметры одним JSON-файлом: газ, PAS, круиз, GPIO, Wi-Fi, AP и события. Импорт читает такой файл обратно и перезагружает плату.</p>
+  <p><a class="card" href="/system/export" download="bike_controller_settings.json">&#8681; Скачать настройки (JSON)</a></p>
+  <form method="POST" action="/system/import" enctype="multipart/form-data">
+  <label for="settingsFileInput">Файл настроек (.json)</label>
+  <input type="file" id="settingsFileInput" name="settingsFile" accept=".json,application/json,text/json" required>
+  <button type="submit">Загрузить из файла</button>
+  </form>
+  <details><summary>Вставить JSON вручную</summary>
+  <form method="POST" action="/system/import">
+  <label for="settingsJson">JSON настроек</label>
+  <textarea id="settingsJson" name="settingsFile" rows="8" placeholder='{"throttle":{...},"pas":{...}}'></textarea>
+  <button type="submit">Импортировать текст</button>
+  </form>
+  </details>
 </fieldset>
 <fieldset><legend>Прошивка</legend>
-<p class="fhint">Загрузка нового .bin по воздуху. Плата перезагрузится сама.</p>
-<a class="card" href="/update">Обновление прошивки</a>
+  <p class="fhint">Загрузка нового .bin по воздуху. Плата перезагрузится сама.</p>
+  <a class="card" href="/update">Обновление прошивки</a>
 </fieldset>
 <fieldset><legend>Сброс</legend>
-<p class="fhint">Все настройки вернутся к заводским: газ, PAS, круиз, события, распиновка и Wi-Fi.</p>
-<form method="POST" action="/system/factory-reset" onsubmit="return confirm('Сбросить все настройки?')">
-<button type="submit" class="danger">Заводской сброс</button>
-</form>
+  <p class="fhint">Все настройки вернутся к заводским: газ, PAS, круиз, события, распиновка и Wi-Fi.</p>
+  <form method="POST" action="/system/factory-reset" onsubmit="return confirm('Сбросить все настройки?')">
+  <button type="submit" class="danger">Заводской сброс</button>
+  </form>
 </fieldset>
 )rawliteral" + getTopBarJs() + R"rawliteral(
 </body></html>
 )rawliteral";
   server.send(200, "text/html; charset=utf-8", html);
+}
+
+// ================= О пробеге =================
+void handleSystemOdometerReset() {
+  odometerReset();
+  server.send(200, "text/plain", "OK");
+}
+
+// ================= Сервисный режим: сохранение лимита =================
+void handleSystemServiceSave() {
+  int limit = server.arg("limit").toInt();
+  if (limit < 10) limit = 10;
+  if (limit > 80) limit = 80;
+  serviceThrottleLimitPct = limit;
+  serviceSettingsSave();
+  server.send(200, "text/plain", "OK");
 }
 
 // ================= Веб: возврат к заводским настройкам =================

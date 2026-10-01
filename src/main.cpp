@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <driver/gpio.h>
 
+#include <freertos/FreeRTOS.h>
+#include <esp_task_wdt.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <WebServer.h>
@@ -67,6 +69,10 @@ void setup() {
   if (err != ESP_OK) {
       Serial.printf("NVS Init Error: 0x%x (%s)\n", err, esp_err_to_name(err));
   }
+
+  // Watchdog: сброс если основной цикл зависнет (5 с)
+  esp_task_wdt_init(5, true);
+  esp_task_wdt_add(NULL);
   Serial.begin(115200);
   Serial.printf("--- OpenBike Controller v%s ---\n", FIRMWARE_VERSION);
 
@@ -121,6 +127,8 @@ void setup() {
   networkInit();
 
   cruiseSettingsLoad();
+  serviceSettingsLoad();
+  odometerLoad();
 
   // Регистрация всех HTTP-маршрутов веб-интерфейса и API
   initWebRoutes(server);
@@ -152,6 +160,8 @@ void setup() {
 }
 
 void criticalControlTask(void *pvParameters) {
+  // Регистрируем задачу в watchdog — сброс если цикл повиснет
+  esp_task_wdt_add(NULL);
   TickType_t xLastWakeTime = xTaskGetTickCount();
   const TickType_t xFrequency = pdMS_TO_TICKS(1); // 1 kHz цикл управления
 

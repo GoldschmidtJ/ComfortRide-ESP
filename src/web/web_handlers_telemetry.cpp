@@ -65,6 +65,7 @@ void handleSystemStatus() {
   json += "\"service\":" + String(serviceModeActive ? "true" : "false") + ",";
   json += "\"service_limit_pct\":" + String(serviceThrottleLimitPct) + ",";
   json += "\"gas_pct\":" + String(hwThrottlePct, 2) + ",";
+  json += "\"odometer_km\":" + String(odometerKm, 1) + ",";
   json += "\"gas_in_v\":" + String(hwThrottleInV, 2) + ",";
   json += "\"gas_out_v\":" + String(hwThrottleOutV, 2) + ",";
   json += "\"motor_pct\":" + String(hwMotorOutPct, 2) + ",";

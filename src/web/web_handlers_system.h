@@ -7,5 +7,9 @@
 void handleHub();
 void handleSystemPage();
 void handleSystemFactoryReset();
+void handleSystemOdometerReset();
+void handleSystemServiceSave();
+void handleSystemOdometerReset();
+void handleSystemServiceSave();
 
 #endif // WEB_HANDLERS_SYSTEM_H
