@@ -1,0 +1,225 @@
+
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Отладка</title>
+<style>
+:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-dark:#0a0f0d;--ui-black:#000;--ui-led:#ff8c00;--ui-led-glow:#ff7700;--ui-led-off:#1e140a;--ui-radius:8px;--ui-control-height:44px;--ui-on-accent:#fff;--ui-success-soft:rgba(46,204,113,.12);--ui-warning-soft:rgba(243,156,18,.15);--ui-danger-soft:rgba(231,76,60,.12);--ui-font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-fs-h1:24px;--ui-fs-h2:18px;--ui-fs-body:16px;--ui-fs-small:13px;--ui-fs-mid:14px;--ui-fs-tiny:12px}
+.back-link,a.back{display:inline-block;color:var(--ui-accent);text-decoration:none;font-size:var(--ui-fs-small);padding:6px 10px;margin:0 0 0 -10px;border-radius:6px}
+.back-link:hover,a.back:hover{text-decoration:underline;background:var(--ui-button)}
+.back-row{margin:0 0 12px}
+*{box-sizing:border-box}body{background:var(--ui-bg);color:var(--ui-text);font-family:var(--ui-font);font-size:var(--ui-fs-body);line-height:1.45;padding:20px;max-width:760px;margin:auto}h1{font-size:var(--ui-fs-h1);line-height:1.2}h2{font-size:var(--ui-fs-h2);line-height:1.3}
+canvas{background:var(--ui-black);border:1px solid var(--ui-border);border-radius:var(--ui-radius);width:100%;max-width:700px;display:block}
+.debug-tools{margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px}.tool-label{font-size:var(--ui-fs-body)}.osc-toggle{margin-left:10px;font-weight:600;font-size:var(--ui-fs-body);min-height:44px;display:flex;align-items:center;gap:8px}.osc-toggle input{width:20px;height:20px;accent-color:var(--ui-accent)}.tbtn{display:inline-flex;align-items:center;justify-content:center;min-height:var(--ui-control-height);background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);padding:9px 12px;border-radius:var(--ui-radius);cursor:pointer;margin:0;font:inherit;font-weight:600;transition:background .12s,border-color .12s}.tbtn.selected{background:var(--ui-accent);border-color:var(--ui-accent)}
+.tbtn:hover{background:var(--ui-hover)}.tbtn:active{background:var(--ui-active)}.tbtn:focus-visible,a:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
+.legend{display:flex;gap:15px;flex-wrap:wrap;margin:10px 0;font-size:var(--ui-fs-small)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.dot-in{background:var(--ui-accent)}.dot-out{background:var(--ui-danger)}.dot-brake{background:var(--ui-warning)}.dot-pas{background:var(--ui-success)}.dot-btn{background:var(--ui-purple)}
+#vals{font-size:var(--ui-fs-mid);margin-top:10px;line-height:1.6}
+.bus-card{max-width:700px;margin-top:22px;padding:14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-card)}.bus-card h2{margin-top:0}.bus-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.bus-link{text-decoration:none;display:inline-block}#busStatus{font-size:var(--ui-fs-small);line-height:1.5;margin:8px 0}#busChart{height:220px}
+a{color:var(--ui-accent)}
+</style></head><body>
+<p class="back-row"><a class="back-link" href="index.html">&larr; Меню</a></p>
+<h1>Отладка (мини-осциллограф)</h1>
+<div class="debug-tools">
+  <span class="tool-label">Масштаб времени:</span>
+  <button type="button" class="tbtn" onclick="setTimeScale(1)" id="tb1">1с</button>
+  <button type="button" class="tbtn" onclick="setTimeScale(3)" id="tb3">3с</button>
+  <button type="button" class="tbtn selected" onclick="setTimeScale(5)" id="tb5">5с</button>
+  <button type="button" class="tbtn" onclick="setTimeScale(10)" id="tb10">10с</button>
+  <button type="button" class="tbtn" onclick="setTimeScale(30)" id="tb30">30с</button>
+  <label class="osc-toggle">
+    <input type="checkbox" id="chkOscilloscope" onchange="updateOscilloscopeState()"> Запускать осциллограф
+  </label>
+</div>
+<canvas id="chart" width="700" height="320"></canvas>
+<div class="legend">
+<span><span class="dot dot-in"></span>Газ вход, В</span>
+<span><span class="dot dot-out"></span>Газ выход, В</span>
+<span><span class="dot dot-brake"></span>Тормоз</span>
+<span><span class="dot dot-pas"></span>PAS активен</span>
+<span><span class="dot dot-btn"></span>Кнопка PAS</span>
+</div>
+<div id="vals">Осциллограф отключен. Включите галочку для запуска.</div>
+<section class="bus-card">
+  <h2>Пассивный сниффер цифровой линии</h2>
+  <p>Вход <b>GPIO36</b> (только чтение, без внутренней подтяжки). Подключайте только через согласование уровня до 3,3 В и общий GND.</p>
+  <div class="bus-actions">
+    <button type="button" class="tbtn" onclick="busCommand(&#39;start&#39;)">Старт</button>
+    <button type="button" class="tbtn" onclick="busCommand(&#39;stop&#39;)">Стоп</button>
+    <button type="button" class="tbtn" onclick="busCommand(&#39;clear&#39;)">Очистить</button>
+    <a class="tbtn bus-link" href="/debug/bus/csv">Скачать CSV</a>
+  </div>
+  <div id="busStatus">Получение состояния...</div>
+  <canvas id="busChart" width="700" height="220"></canvas>
+</section>
+
+
+<script>
+const canvas = document.getElementById('chart');
+const ctx = canvas ? canvas.getContext('2d') : null;
+const W = canvas ? canvas.width : 0, H = canvas ? canvas.height : 0;
+const VMAX = 5.0; // шкала по напряжению, В
+let currentTimeScaleSec = 5;
+let isOscRunning = false;
+
+function setTimeScale(sec) {
+  currentTimeScaleSec = sec;
+  [1, 3, 5, 10, 30].forEach(s => {
+    const el = document.getElementById('tb' + s);
+    if (el) {
+      el.classList.toggle('selected', s === sec);
+    }
+  });
+}
+
+function updateOscilloscopeState() {
+  const checkbox = document.getElementById('chkOscilloscope');
+  isOscRunning = checkbox.checked;
+  if (isOscRunning) {
+    refresh();
+  } else {
+    document.getElementById('vals').innerText = 'Осциллограф отключен.';
+    if (ctx) ctx.clearRect(0,0,W,H);
+  }
+}
+
+function draw(rawHistory) {
+  if (!ctx) return;
+  ctx.clearRect(0,0,W,H);
+  if (!rawHistory || !rawHistory.length) return;
+  const now = rawHistory[rawHistory.length - 1].t;
+  const cutoff = now - currentTimeScaleSec * 1000;
+  let data = rawHistory.filter(d => d.t >= cutoff);
+  if (data.length < 2) data = rawHistory.slice(-2);
+  if (data.length < 2) return;
+
+  // сетка
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 1;
+  for (let v = 0; v <= VMAX; v++) {
+    const y = H - 60 - (v/VMAX)*(H-80);
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    ctx.fillStyle = '#555'; ctx.font = '10px sans-serif';
+    ctx.fillText(v.toFixed(1)+'В', 2, y-2);
+  }
+
+  const stepX = W / (data.length - 1);
+  function plotV(key, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+    data.forEach((d,i) => {
+      const x = i*stepX;
+      const y = H - 60 - (d[key]/VMAX)*(H-80);
+      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  }
+  function plotBool(key, color, baseY) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+    data.forEach((d,i) => {
+      const x = i*stepX;
+      const y = d[key] ? baseY - 15 : baseY;
+      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  }
+
+  plotV('in', '#4a90d9');
+  plotV('out', '#e74c3c');
+  plotBool('brake', '#f39c12', H-25);
+  plotBool('pas', '#2ecc71', H-45);
+  plotBool('btn', '#9b59b6', H-65);
+}
+
+function refresh() {
+  if (!isOscRunning) return;
+  fetch('/debug/data').then(r=>r.json()).then(data=>{
+    if (!isOscRunning) return;
+    draw(data);
+    if (data.length) {
+      const last = data[data.length-1];
+      document.getElementById('vals').innerHTML =
+        'Газ вход: <b>' + last.in.toFixed(2) + 'В</b> &nbsp;|&nbsp; ' +
+        'Газ выход: <b>' + last.out.toFixed(2) + 'В</b> &nbsp;|&nbsp; ' +
+        'Тормоз: <b>' + (last.brake ? 'НАЖАТ' : 'отпущен') + '</b> &nbsp;|&nbsp; ' +
+        'PAS: <b>' + (last.pas ? ('активен, уровень '+last.lvl) : 'неактивен') + '</b> &nbsp;|&nbsp; ' +
+        'Кнопка: <b>' + (last.btn ? 'НАЖАТА' : 'отпущена') + '</b>';
+    }
+  }).catch(e=>{});
+}
+setInterval(refresh, 200);
+const busCanvas = document.getElementById("busChart");
+const busCtx = busCanvas ? busCanvas.getContext("2d") : null;
+let busBusy = false;
+
+async function busCommand(cmd) {
+  try {
+    const r = await fetch("/debug/bus/control?cmd=" + encodeURIComponent(cmd), {method:"POST"});
+    if (!r.ok) throw new Error(await r.text());
+    await refreshBus();
+  } catch (e) { alert("Сниффер: " + e.message); }
+}
+
+function drawBus(edges) {
+  if (!busCanvas || !busCtx) return;
+  const w=busCanvas.width,h=busCanvas.height;
+  busCtx.clearRect(0,0,w,h); busCtx.fillStyle="#050505"; busCtx.fillRect(0,0,w,h);
+  if (!edges || edges.length < 2) return;
+  const first=edges[0][0], last=edges[edges.length-1][0], span=Math.max(1,last-first);
+
+  // Если на один пиксель приходится несколько фронтов, отдельные ступеньки
+  // уже неразличимы. Показываем плотность переходов вместо ложного муара.
+  if (edges.length > w*2) {
+    const density=new Uint16Array(w);
+    let maxDensity=1;
+    for(let i=1;i<edges.length;i++) {
+      const x=Math.min(w-1,Math.max(0,Math.floor((edges[i][0]-first)*w/span)));
+      density[x]++;
+      if(density[x]>maxDensity) maxDensity=density[x];
+    }
+    for(let x=0;x<w;x++) {
+      if(!density[x]) continue;
+      const intensity=Math.sqrt(density[x]/maxDensity);
+      busCtx.fillStyle='rgba(46,204,113,'+(0.18+0.82*intensity).toFixed(3)+')';
+      busCtx.fillRect(x,20,1,h-40);
+    }
+    return;
+  }
+
+  busCtx.strokeStyle="#2ecc71"; busCtx.lineWidth=1.5; busCtx.beginPath();
+  let py=edges[0][1]?35:h-35; busCtx.moveTo(0,py);
+  for (let i=1;i<edges.length;i++) {
+    const x=(edges[i][0]-first)*w/span, y=edges[i][1]?35:h-35;
+    busCtx.lineTo(x,py); busCtx.lineTo(x,y); py=y;
+  }
+  busCtx.lineTo(w,py); busCtx.stroke();
+}
+
+async function fetchJson(url) {
+  const response=await fetch(url);
+  if (!response.ok) throw new Error("HTTP "+response.status+": "+await response.text());
+  return response.json();
+}
+
+async function refreshBus() {
+  if (busBusy) return; busBusy=true;
+  try {
+    const status=await fetchJson("/debug/bus/status");
+    let text=(status.running?"Запись идёт":"Остановлено")+" · фронтов в памяти: "+status.count+"/"+status.capacity+" · всего: "+status.total;
+    if(status.overwritten) text+=" · перезаписано: "+status.overwritten;
+    if(status.busy) text+=" · НЕДОСТУПНО: "+status.reason;
+    const statusElement=document.getElementById("busStatus");
+    if (statusElement) statusElement.innerText=text;
+    if(status.count) {
+      const data=await fetchJson("/debug/bus/data");
+      drawBus(data.edges);
+    } else drawBus([]);
+  } catch(e) {
+    const statusElement=document.getElementById("busStatus");
+    if (statusElement) statusElement.innerText="Ошибка: "+e.message;
+  } finally { busBusy=false; }
+}
+setInterval(refreshBus, 1000);
+refreshBus();
+
+</script>
+</body></html>

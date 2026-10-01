@@ -1,0 +1,307 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Управление тягой</title>
+<style>
+
+:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-dark:#0a0f0d;--ui-black:#000;--ui-led:#ff8c00;--ui-led-glow:#ff7700;--ui-led-off:#1e140a;--ui-radius:8px;--ui-control-height:44px;--ui-on-accent:#fff;--ui-success-soft:rgba(46,204,113,.12);--ui-warning-soft:rgba(243,156,18,.15);--ui-danger-soft:rgba(231,76,60,.12);--ui-font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-fs-h1:24px;--ui-fs-h2:18px;--ui-fs-body:16px;--ui-fs-small:13px;--ui-fs-mid:14px;--ui-fs-tiny:12px}
+.u-muted{color:var(--ui-muted)}.u-small{font-size:var(--ui-fs-tiny)}.u-dim{opacity:.7}.hint{color:var(--ui-muted);font-size:var(--ui-fs-small)}.is-hidden{display:none!important}
+.back-link,a.back{display:inline-block;color:var(--ui-accent);text-decoration:none;font-size:var(--ui-fs-small);padding:6px 10px;margin:0 0 0 -10px;border-radius:6px}
+.back-link:hover,a.back:hover{text-decoration:underline;background:var(--ui-button)}
+.back-row{margin:0 0 12px}
+.top-bar-sticky{position:sticky;top:0;top:env(safe-area-inset-top);z-index:9999;background:var(--ui-card);border-bottom:1px solid var(--ui-border);padding:8px 12px;margin:-20px -20px 15px;font-size:var(--ui-fs-tiny);color:var(--ui-muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.tb-item{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.tb-link{color:var(--ui-accent);text-decoration:none;padding:2px 6px;border-radius:6px;background:var(--ui-button);border:1px solid var(--ui-border);transition:background .2s,border-color .2s}
+.tb-link:hover{background:var(--ui-hover);border-color:var(--ui-muted);color:var(--ui-text)}
+.tb-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot-green{background:var(--ui-success);box-shadow:0 0 5px var(--ui-success)}
+.dot-yellow{background:var(--ui-warning);box-shadow:0 0 5px var(--ui-warning)}
+.dot-red{background:var(--ui-danger)}
+.dot-gray{background:var(--ui-muted)}
+
+*{box-sizing:border-box}body{font-family:var(--ui-font);font-size:var(--ui-fs-body);line-height:1.45;padding:20px;max-width:520px;margin:auto;background:var(--ui-bg);color:var(--ui-text)}h1{font-size:var(--ui-fs-h1);line-height:1.2;margin:20px 0 16px}h2{font-size:var(--ui-fs-h2);line-height:1.3}p{line-height:1.5}
+label{display:block;margin-top:12px;line-height:1.35}input,select{width:100%;min-height:var(--ui-control-height);padding:9px 10px;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:var(--ui-radius);font:inherit}input[type=checkbox],input[type=radio]{width:20px;min-height:20px;accent-color:var(--ui-accent)}input[type=range]{min-height:32px;padding:0;accent-color:var(--ui-accent)}
+button{min-height:var(--ui-control-height);margin-top:15px;padding:9px 12px;width:100%;font:inherit;font-weight:600;border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:var(--ui-button);color:var(--ui-text);cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s}
+button:hover{background:var(--ui-hover)}button:active{background:var(--ui-active)}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}button:disabled{opacity:.45;cursor:not-allowed}
+.chk{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px;min-height:44px}.chk input{flex:0 0 auto;margin:0;order:2}.chk label{margin-top:0;min-width:0;order:1}
+.frow{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:nowrap;min-width:0}.frow>label{margin-top:0;flex:1 1 0;min-width:0;overflow-wrap:anywhere}.frow>input,.frow>select{width:170px;flex:0 0 170px;min-width:0;max-width:170px;margin:0}.frow>.fval{flex:0 0 auto;font-weight:600;text-align:right}.fhint{color:var(--ui-muted);font-size:var(--ui-fs-tiny);line-height:1.35;margin:3px 0 0;overflow-wrap:anywhere}.panel{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:var(--ui-radius);padding:12px;margin-bottom:12px}
+fieldset{border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin-top:15px;padding:10px 12px;background:var(--ui-card)}legend{padding:0 6px;color:var(--ui-muted);font-size:var(--ui-fs-small)}.levels{border-left:2px solid var(--ui-border);padding-left:10px;margin-top:10px}.hint{color:var(--ui-muted);font-size:var(--ui-fs-small)}.warn{color:var(--ui-text);font-size:var(--ui-fs-small);margin-top:6px}.cal-btn{margin-top:4px}
+.card{display:flex;align-items:center;min-height:var(--ui-control-height);background:var(--ui-button);color:var(--ui-text);padding:12px 15px;border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin-bottom:10px;text-decoration:none;cursor:pointer;transition:background .12s,border-color .12s}.card:hover{background:var(--ui-hover)}.card:active{background:var(--ui-active)}
+@media(max-width:420px){body{padding:12px}.top-bar-sticky{margin-left:-12px;margin-right:-12px}h1{font-size:22px}.frow>input,.frow>select{width:128px;flex-basis:128px;max-width:128px}}
+
+#liveV{font-size:var(--ui-fs-h2);font-weight:bold;color:var(--ui-text);display:inline-block;padding:4px 8px;background:var(--ui-button);border-radius:4px;border:1px solid var(--ui-border)}
+.cal-status{margin-top:8px;font-weight:bold}
+.tab-row{display:flex;gap:6px;margin:12px 0 16px;background:var(--ui-card);padding:4px;border-radius:var(--ui-radius);border:1px solid var(--ui-border)}
+.tab-btn{flex:1;background:transparent;border:none;color:var(--ui-muted);font-weight:600;padding:8px 6px;margin:0;min-height:36px;border-radius:6px;cursor:pointer;font-size:var(--ui-fs-small);transition:all .15s}
+.tab-btn.active{background:var(--ui-accent);color:#fff;box-shadow:0 0 8px rgba(74,144,217,.3)}
+.sec-card{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:var(--ui-radius);padding:14px;margin-bottom:14px}
+.sec-card h2{margin-top:0;font-size:var(--ui-fs-h2);border-bottom:1px solid var(--ui-border);padding-bottom:8px}
+</style></head><body>
+
+<div class="top-bar-sticky">
+  <div class="tb-item" title="Нагрузка процессора ESP32">
+    <span>CPU:</span> <b id="tbCpu">0%</b>
+  </div>
+  <div class="tb-item" title="Оперативная память (занято / свободно)">
+    <span>RAM:</span> <b id="tbRam">0%</b> <span id="tbRamKb" class="u-muted u-small">(0k)</span>
+  </div>
+  <div class="tb-item" title="Flash память (прошивка / всего)">
+    <span>ROM:</span> <span id="tbRom" class="u-muted">0k</span>
+  </div>
+  <a href="/wifi" class="tb-item tb-link" title="Настройки Wi-Fi">
+    <span>WiFi:</span>
+    <span class="tb-dot dot-gray" id="tbWifiDot"></span>
+    <span id="tbWifiTxt">...</span>
+  </a>
+  <div class="tb-item" title="Температура процессора">
+    <span>Temp:</span> <b id="tbTemp">--°C</b>
+  </div>
+  <div class="tb-item u-dim" title="Bluetooth (не используется)">
+    <span>BT:</span>
+    <span class="tb-dot dot-gray"></span>
+    <span class="u-muted">Выкл</span>
+  </div>
+</div>
+<p class="back-row"><a class="back-link" href="index.html">&larr; Меню</a></p>
+<h1>Управление тягой</h1>
+<div class="tab-row">
+  <button type="button" class="tab-btn active" onclick="showSec('all',this)">Всё</button>
+  <button type="button" class="tab-btn" onclick="showSec('th',this)">Газ</button>
+  <button type="button" class="tab-btn" onclick="showSec('pas',this)">PAS</button>
+  <button type="button" class="tab-btn" onclick="showSec('cr',this)">Круиз</button>
+</div>
+
+<!-- ================= БЛОК 1: ГАЗ ================= -->
+<div id="sec_th" class="sec-card">
+<h2>⚡ Ручка газа (Throttle)</h2>
+<form id="f_th">
+<fieldset><legend>Калибровка (в реальных вольтах)</legend>
+<div class="frow"><label>Текущее напряжение</label><span class="fval" id="liveV">-- В</span></div>
+<div class="frow"><label for="inMinV">Вход минимум, В</label><input type="number" step="0.01" min="0" max="5" id="inMinV" name="inMinV" value="1.10"></div>
+<p class="fhint">Напряжение ручки газа в покое.</p>
+<button type="button" class="cal-btn" onclick="calMin()">Захватить минимум (ручка отпущена)</button>
+
+<div class="frow"><label for="inMaxV">Вход максимум, В</label><input type="number" step="0.01" min="0" max="5" id="inMaxV" name="inMaxV" value="4.10"></div>
+<p class="fhint">Напряжение ручки на полном газу.</p>
+<button type="button" class="cal-btn" onclick="calMax()">Захватить максимум (полный газ)</button>
+
+<div class="frow"><label>Выход минимум, В</label><input type="number" step="0.05" min="0" max="5" name="outMinV" value="1.15"></div>
+<p class="fhint">Холостой уровень на входе мотор-контроллера (удерживается для быстрого отклика).</p>
+<div class="frow"><label>Выход максимум, В</label><input type="number" step="0.05" min="0" max="5" name="outMaxV" value="4.10"></div>
+</fieldset>
+
+<fieldset><legend>Согласующие цепи (MCP6002)</legend>
+<div class="frow"><label>Коэффициент делителя</label><input type="number" step="0.001" min="0.1" max="1" name="divRatio" value="0.667"></div>
+<div class="frow"><label>Коэффициент усиления ОУ</label><input type="number" step="0.01" min="1" max="3" name="gain" value="1.33"></div>
+</fieldset>
+
+<fieldset><legend>Мягкий старт (по умолчанию для PAS и Круиза)</legend>
+<div class="chk"><label for="throttleSsEn">Мягкий старт</label><input type="checkbox" id="throttleSsEn" name="ssEn" checked></div>
+<div class="frow"><label>Время разгона, мс</label><input type="number" name="ssMs" value="500"></div>
+<input type="hidden" name="spEn" value="">
+<input type="hidden" name="spMs" value="">
+<p class="fhint">Параметры разгона применяются к ручке газа, а также к PAS и Круизу (при выборе режима «По умолчанию»).</p>
+</fieldset>
+<button type="submit">Сохранить газ</button>
+</form>
+</div>
+
+<div id="sec_pas" class="sec-card">
+<h2>🦶 Ассистент педалей (PAS)</h2>
+<form id="f_pas">
+<fieldset><legend>Ассистент PAS</legend>
+<div class="chk"><label for="pasEn">Включить PAS</label><input type="checkbox" id="pasEn" name="en" ></div>
+</fieldset>
+<fieldset><legend>Датчик</legend>
+<div class="frow"><label>Магниты</label><input type="number" name="magnets" value=""></div>
+<div class="frow"><label>Фронт сигнала</label>
+<select name="edge">
+<option value="2">При уходе магнита (FALLING)</option>
+<option value="3">При появлении магнита (RISING)</option>
+<option value="1">При любом изменении (CHANGE)</option>
+</select></div>
+<div class="frow"><label>Угол активации</label>
+<select name="angle">
+<option value="90">90&deg;</option>
+<option value="180">180&deg;</option>
+<option value="270">270&deg;</option>
+<option value="360">360&deg;</option>
+</select></div>
+<div class="frow"><label>Память импульса, мс</label><input type="number" name="timeout" value=""></div>
+<div class="frow"><label>Остановка, мс</label><input type="number" name="stopTO" value=""></div>
+</fieldset>
+
+<fieldset><legend>Калибровка магнитов</legend>
+<button type="button" onclick="calStart()">Старт калибровки (2 оборота)</button>
+<button type="button" onclick="calStop()">Готово</button>
+<div id="calStat" class="cal-status">—</div>
+</fieldset>
+
+<fieldset><legend>Уровни усилия (0-)</legend>
+<div class="frow"><label>Количество уровней</label><input type="number" id="pas_count" name="count" min="0" max="20" value="5" oninput="renderPasLevels()"></div>
+<div id="pas_levels"></div>
+<button type="button" onclick="autoDistributePas()">Автораспределение</button>
+</fieldset>
+
+<fieldset><legend>Мягкий старт</legend>
+<div class="frow"><label>Режим сглаживания</label>
+<select name="smMode" id="pasSmMode" onchange="togglePasCustomSmooth()">
+  <option value="0">По умолчанию (из настроек Газа)</option>
+  <option value="1">Свои настройки</option>
+  <option value="2">Выключено</option>
+</select></div>
+<div id="pasCustomBlock">
+<div class="chk"><label for="pasSsEn">Мягкий старт</label><input type="checkbox" id="pasSsEn" name="ssEn" ></div>
+<div class="frow"><label>Время разгона, мс</label><input type="number" name="ssMs" value=""></div>
+</div>
+<input type="hidden" name="spEn" value="500">
+<input type="hidden" name="spMs" value="">
+</fieldset>
+<button type="submit">Сохранить PAS</button>
+</form>
+</div>
+
+<div id="sec_cr" class="sec-card">
+<h2>🏎 Круиз-контроль (Cruise)</h2>
+<form id="f_cr">
+<fieldset><legend>Уровни</legend>
+<div class="frow"><label>Количество уровней (1–100)</label>
+<input type="number" id="cr_count" name="count" min="1" max="100" value="4" oninput="autoDistributeCruise()"></div>
+<div class="frow"><label for="stPct">Начало, %</label><input type="number" id="stPct" name="stPct" step="1" min="0" max="100" oninput="autoDistributeCruise()" value="25"></div>
+<div class="frow"><label for="endPct">Конец, %</label><input type="number" id="endPct" name="endPct" step="1" min="0" max="100" oninput="autoDistributeCruise()" value="100"></div>
+<div id="cruise_levels" class="levels"></div>
+</fieldset>
+
+<fieldset><legend>Мягкий старт</legend>
+<div class="frow"><label>Режим сглаживания</label>
+<select name="smMode" id="cruiseSmMode" onchange="toggleCruiseCustomSmooth()">
+  <option value="0">По умолчанию (из настроек Газа)</option>
+  <option value="1">Свои настройки</option>
+  <option value="2">Выключено</option>
+</select></div>
+<div id="cruiseCustomBlock">
+<div class="chk"><label for="cruiseSsEn">Мягкий старт</label><input type="checkbox" id="cruiseSsEn" name="ssEn" ></div>
+<div class="frow"><label>Время разгона, мс</label><input type="number" name="ssMs" value="500"></div>
+</div>
+<input type="hidden" name="spEn" value="">
+<input type="hidden" name="spMs" value="">
+</fieldset>
+
+<fieldset><legend>Поведение</legend>
+<div class="chk"><label for="confThr">Подтверждать газом после старта</label><input type="checkbox" id="confThr" name="confThr" ></div>
+<div class="frow"><label>После торможения</label>
+<select name="brkMode">
+  <option value="0">Сброс круиза</option>
+  <option value="1">Подтверждение газом</option>
+  <option value="2">Восстановить</option>
+</select></div>
+<div class="frow"><label>После перегазовки</label>
+<select name="thrMode">
+  <option value="0">Сброс круиза</option>
+  <option value="1">Подтверждение газом</option>
+  <option value="2">Восстановить</option>
+</select></div>
+</fieldset>
+<button type="submit">Сохранить круиз</button>
+</form>
+</div>
+
+<script>
+function renderLevelFields(containerId, inputName, values, count, label, max) {
+  const div=document.getElementById(containerId); if(!div) return;
+  const safeCount=Math.max(0, Math.min(Number(count)||0, Number(max)||100));
+  div.replaceChildren();
+  for(let i=0;i<safeCount;i++) {
+    const row=document.createElement('div'); row.className='frow';
+    const text=document.createElement('label'); text.textContent=label+' '+(i+1);
+    const input=document.createElement('input'); input.type='number'; input.className='lvl-input'; input.name=inputName+i;
+    input.min='0'; input.max='100'; input.step='1'; input.value=Math.round(values[i] ?? 0);
+    row.append(text,input); div.append(row);
+  }
+}
+function distributeLevels(values,count,start=0,end=100) {
+  count=Math.max(0,Number(count)||0); if(!count) return;
+  for(let i=0;i<count;i++) values[i]=Math.round(count===1?end:start+i*(end-start)/(count-1));
+}
+</script>
+<script>
+function showSec(sec, btn){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('sec_th').style.display = (sec==='all'||sec==='th')?'block':'none';
+  document.getElementById('sec_pas').style.display = (sec==='all'||sec==='pas')?'block':'none';
+  document.getElementById('sec_cr').style.display = (sec==='all'||sec==='cr')?'block':'none';
+}
+
+// Газ
+document.getElementById('f_th').addEventListener('submit',function(e){
+  e.preventDefault();
+  fetch('/settings/throttle/save',{method:'POST',body:new FormData(this)}).then(()=>alert('Настройки газа сохранены'));
+});
+let pollVBusy=false;
+function pollV(){
+  if(pollVBusy) return;
+  pollVBusy=true;
+  fetch('/status/sys').then(r=>r.json()).then(d=>{
+    if(d.gas_in_v!==undefined) document.getElementById('liveV').textContent = d.gas_in_v.toFixed(2)+' В';
+  }).catch(()=>{}).finally(()=>{pollVBusy=false;});
+}
+setInterval(pollV, 500); pollV();
+function calMin(){ fetch('/settings/throttle/cal_min',{method:'POST'}).then(r=>r.json()).then(d=>{ document.getElementById('inMinV').value = d.val.toFixed(2); }); }
+function calMax(){ fetch('/settings/throttle/cal_max',{method:'POST'}).then(r=>r.json()).then(d=>{ document.getElementById('inMaxV').value = d.val.toFixed(2); }); }
+
+// PAS
+const pasSaved = [20,40,60,80,100];
+function renderPasLevels(){ renderLevelFields('pas_levels','lvl',pasSaved,document.getElementById('pas_count').value,'Уровень — усилие (%)',100); }
+function autoDistributePas(){ distributeLevels(pasSaved,parseInt(document.getElementById('pas_count').value)||0); renderPasLevels(); }
+renderPasLevels();
+function togglePasCustomSmooth(){ document.getElementById('pasCustomBlock').style.display = document.getElementById('pasSmMode').value === '1' ? '' : 'none'; }
+togglePasCustomSmooth();
+document.getElementById('f_pas').addEventListener('submit',function(e){
+  e.preventDefault();
+  const d=new FormData(this);
+  const count=parseInt(document.getElementById('pas_count').value)||0;
+  for(let i=0;i<count;i++){ const el=document.querySelector('#sec_pas [name=lvl'+i+']'); if(el) d.append('lvl'+i, el.value); }
+  fetch('/settings/pas/save',{method:'POST',body:d}).then(()=>alert('Настройки PAS сохранены'));
+});
+let calTimer=null;
+function calStart(){ fetch('/settings/pas/cal_start').then(()=>{ calTimer=setInterval(calPoll,250); document.getElementById('calStat').textContent='Крути педали ровно 2 оборота...'; }); }
+function calStop(){ fetch('/settings/pas/cal_stop').then(r=>r.json()).then(d=>{ if(calTimer){clearInterval(calTimer);calTimer=null;} if(d.finished){ document.getElementById('calStat').textContent='Готово! Магнитов: '+d.magnets; } }); }
+function calPoll(){ fetch('/settings/pas/cal_status').then(r=>r.json()).then(d=>{ if(d.finished){ if(calTimer){clearInterval(calTimer);calTimer=null;} document.getElementById('calStat').textContent='Готово! Магнитов: '+d.magnets; } else { const estM=Math.round((d.pulses||0)/2); document.getElementById('calStat').textContent='Импульсов: '+d.pulses+' → магнитов: ~'+estM; } }); }
+
+// Круиз
+const crSaved = [25,50,75,100];
+function renderCruiseLevels(){ renderLevelFields('cruise_levels','lvl',crSaved,document.getElementById('cr_count').value,'Цель, % — уровень',100); }
+function autoDistributeCruise(){
+  const count=parseInt(document.getElementById('cr_count').value)||0;
+  const st=parseFloat(document.getElementById('stPct').value)||0;
+  const end=parseFloat(document.getElementById('endPct').value)||100;
+  distributeLevels(crSaved,count,st,end); renderCruiseLevels();
+}
+renderCruiseLevels();
+function toggleCruiseCustomSmooth(){ document.getElementById('cruiseCustomBlock').style.display = document.getElementById('cruiseSmMode').value === '1' ? '' : 'none'; }
+toggleCruiseCustomSmooth();
+document.getElementById('f_cr').addEventListener('submit',function(e){
+  e.preventDefault();
+  const d=new FormData(this);
+  const count=parseInt(document.getElementById('cr_count').value)||0;
+  const lvls=[];
+  for(let i=0;i<count;i++){ const el=document.querySelector('#sec_cr [name=lvl'+i+']'); if(el) lvls.push(parseFloat(el.value)||0); }
+  d.append('levelsJson', JSON.stringify(lvls));
+  fetch('/settings/cruise/save',{method:'POST',body:d}).then(()=>alert('Настройки круиза сохранены'));
+});
+</script>
+<script>
+const mockD = { cpu: 9, ram_pct: 37, ram_free_kb: 205, rom_sketch_kb: 1083, rom_total_kb: 1310, wifi_mode: "STA", wifi_ssid: "Donut", temp: 42 };
+function updateTopBar(){
+  const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val};
+  set('tbCpu',(mockD.cpu + Math.floor(Math.random()*4))+'%');
+  set('tbRam',mockD.ram_pct+'%');
+  set('tbRamKb','('+mockD.ram_free_kb+'k)');
+  set('tbRom',mockD.rom_sketch_kb+'k/'+mockD.rom_total_kb+'k');
+  set('tbTemp',(mockD.temp + Math.floor(Math.random()*2))+'°C');
+  const dot=document.getElementById('tbWifiDot'),txt=document.getElementById('tbWifiTxt');
+  if(dot&&txt){dot.className='tb-dot dot-green';txt.textContent=mockD.wifi_ssid;}
+}
+setInterval(updateTopBar, 2000); updateTopBar();
+</script>
+</body></html>

@@ -9,7 +9,8 @@ __pycache__/
 compile_commands.json
 
 # Generated previews
-preview_animation.html
+# Generated preview moved to ui_preview/
+ui_preview/preview_animation.html
 
 # PlatformIO
 .pio
@@ -34,5 +35,4 @@ partitions.csv
 bootloader/
 esp32/
 sdk/
-tools/
 

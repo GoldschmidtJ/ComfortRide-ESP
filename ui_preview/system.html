@@ -1,0 +1,88 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Система</title><style>
+:root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-dark:#0a0f0d;--ui-black:#000;--ui-led:#ff8c00;--ui-led-glow:#ff7700;--ui-led-off:#1e140a;--ui-radius:8px;--ui-control-height:44px;--ui-on-accent:#fff;--ui-success-soft:rgba(46,204,113,.12);--ui-warning-soft:rgba(243,156,18,.15);--ui-danger-soft:rgba(231,76,60,.12);--ui-font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-fs-h1:24px;--ui-fs-h2:18px;--ui-fs-body:16px;--ui-fs-small:13px;--ui-fs-mid:14px;--ui-fs-tiny:12px}
+.u-muted{color:var(--ui-muted)}.u-small{font-size:var(--ui-fs-tiny)}.u-dim{opacity:.7}.hint{color:var(--ui-muted);font-size:var(--ui-fs-small)}.is-hidden{display:none!important}
+.back-link,a.back{display:inline-block;color:var(--ui-accent);text-decoration:none;font-size:var(--ui-fs-small);padding:6px 10px;margin:0 0 0 -10px;border-radius:6px}
+.back-link:hover,a.back:hover{text-decoration:underline;background:var(--ui-button)}
+.back-row{margin:0 0 12px}
+.top-bar-sticky{position:sticky;top:0;top:env(safe-area-inset-top);z-index:9999;background:var(--ui-card);border-bottom:1px solid var(--ui-border);padding:8px 12px;margin:-20px -20px 15px;font-size:var(--ui-fs-tiny);color:var(--ui-muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.tb-item{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.tb-link{color:var(--ui-accent);text-decoration:none;padding:2px 6px;border-radius:6px;background:var(--ui-button);border:1px solid var(--ui-border);transition:background .2s,border-color .2s}
+.tb-link:hover{background:var(--ui-hover);border-color:var(--ui-muted);color:var(--ui-text)}
+.tb-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot-green{background:var(--ui-success);box-shadow:0 0 5px var(--ui-success)}
+.dot-yellow{background:var(--ui-warning);box-shadow:0 0 5px var(--ui-warning)}
+.dot-red{background:var(--ui-danger)}
+.dot-gray{background:var(--ui-muted)}
+
+*{box-sizing:border-box}body{font-family:var(--ui-font);font-size:var(--ui-fs-body);line-height:1.45;padding:20px;max-width:520px;margin:auto;background:var(--ui-bg);color:var(--ui-text)}h1{font-size:var(--ui-fs-h1);line-height:1.2;margin:20px 0 16px}h2{font-size:var(--ui-fs-h2);line-height:1.3}p{line-height:1.5}
+label{display:block;margin-top:12px;line-height:1.35}input,select{width:100%;min-height:var(--ui-control-height);padding:9px 10px;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:var(--ui-radius);font:inherit}input[type=checkbox],input[type=radio]{width:20px;min-height:20px;accent-color:var(--ui-accent)}input[type=range]{min-height:32px;padding:0;accent-color:var(--ui-accent)}
+button{min-height:var(--ui-control-height);margin-top:15px;padding:9px 12px;width:100%;font:inherit;font-weight:600;border:1px solid var(--ui-border);border-radius:var(--ui-radius);background:var(--ui-button);color:var(--ui-text);cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s}
+button:hover{background:var(--ui-hover)}button:active{background:var(--ui-active)}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}button:disabled{opacity:.45;cursor:not-allowed}
+.chk{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px;min-height:44px}.chk input{flex:0 0 auto;margin:0;order:2}.chk label{margin-top:0;min-width:0;order:1}
+.frow{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:nowrap;min-width:0}.frow>label{margin-top:0;flex:1 1 0;min-width:0;overflow-wrap:anywhere}.frow>input,.frow>select{width:170px;flex:0 0 170px;min-width:0;max-width:170px;margin:0}.frow>.fval{flex:0 0 auto;font-weight:600;text-align:right}.fhint{color:var(--ui-muted);font-size:var(--ui-fs-tiny);line-height:1.35;margin:3px 0 0;overflow-wrap:anywhere}.panel{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:var(--ui-radius);padding:12px;margin-bottom:12px}
+fieldset{border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin-top:15px;padding:10px 12px;background:var(--ui-card)}legend{padding:0 6px;color:var(--ui-muted);font-size:var(--ui-fs-small)}.levels{border-left:2px solid var(--ui-border);padding-left:10px;margin-top:10px}.hint{color:var(--ui-muted);font-size:var(--ui-fs-small)}.warn{color:var(--ui-text);font-size:var(--ui-fs-small);margin-top:6px}.cal-btn{margin-top:4px}
+.card{display:flex;align-items:center;min-height:var(--ui-control-height);background:var(--ui-button);color:var(--ui-text);padding:12px 15px;border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin-bottom:10px;text-decoration:none;cursor:pointer;transition:background .12s,border-color .12s}.card:hover{background:var(--ui-hover)}.card:active{background:var(--ui-active)}
+@media(max-width:420px){body{padding:12px}.top-bar-sticky{margin-left:-12px;margin-right:-12px}h1{font-size:22px}.frow>input,.frow>select{width:128px;flex-basis:128px;max-width:128px}}
+</style></head>
+<body>
+<div class="top-bar-sticky">
+  <div class="tb-item" title="Нагрузка процессора ESP32">
+    <span>CPU:</span> <b id="tbCpu">0%</b>
+  </div>
+  <div class="tb-item" title="Оперативная память (занято / свободно)">
+    <span>RAM:</span> <b id="tbRam">0%</b> <span id="tbRamKb" class="u-muted u-small">(0k)</span>
+  </div>
+  <div class="tb-item" title="Flash память (прошивка / всего)">
+    <span>ROM:</span> <span id="tbRom" class="u-muted">0k</span>
+  </div>
+  <a href="/wifi" class="tb-item tb-link" title="Настройки Wi-Fi">
+    <span>WiFi:</span>
+    <span class="tb-dot dot-gray" id="tbWifiDot"></span>
+    <span id="tbWifiTxt">...</span>
+  </a>
+  <div class="tb-item" title="Температура процессора">
+    <span>Temp:</span> <b id="tbTemp">--°C</b>
+  </div>
+  <div class="tb-item u-dim" title="Bluetooth (не используется)">
+    <span>BT:</span>
+    <span class="tb-dot dot-gray"></span>
+    <span class="u-muted">Выкл</span>
+  </div>
+</div>
+<p class="back-row"><a class="back-link" href="index.html">&larr; Меню</a></p>
+<h1>Система</h1>
+<fieldset><legend>Файл настроек (JSON)</legend>
+<p class="fhint">Экспорт сохраняет все параметры одним файлом: газ, PAS, круиз, распиновку, Wi-Fi и события.</p>
+<div style="margin-top:10px">
+  <button type="button" class="secondary" onclick="alert('Экспорт JSON настроек...')">⇩ Скачать бэкап настроек (.json)</button>
+</div>
+<div style="margin-top:12px">
+  <label>Загрузить файл настроек</label>
+  <input type="file" style="margin-top:4px" onchange="alert('Файл загружен и проверен!')">
+</div>
+</fieldset>
+<fieldset><legend>Обновление прошивки (OTA)</legend>
+<p class="fhint">Загрузка бинарника .bin по воздуху без кабеля.</p>
+<button type="button" class="secondary" onclick="alert('Страница OTA /update')">Перейти к обновлению прошивки &rarr;</button>
+</fieldset>
+<fieldset><legend>Сброс к заводским установкам</legend>
+<p class="fhint">Очистка NVS flash-памяти: сброс параметров газа, PAS, круиза, сети и правил.</p>
+<button type="button" class="danger" onclick="if(confirm('Сбросить все настройки к заводским?')) alert('Заводской сброс выполнен. Плата перезагружена.')">Заводской сброс</button>
+</fieldset>
+<script>
+const mockD = { cpu: 9, ram_pct: 37, ram_free_kb: 205, rom_sketch_kb: 1083, rom_total_kb: 1310, wifi_mode: "STA", wifi_ssid: "Donut", temp: 42 };
+function updateTopBar(){
+  const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val};
+  set('tbCpu',(mockD.cpu + Math.floor(Math.random()*4))+'%');
+  set('tbRam',mockD.ram_pct+'%');
+  set('tbRamKb','('+mockD.ram_free_kb+'k)');
+  set('tbRom',mockD.rom_sketch_kb+'k/'+mockD.rom_total_kb+'k');
+  set('tbTemp',(mockD.temp + Math.floor(Math.random()*2))+'°C');
+  const dot=document.getElementById('tbWifiDot'),txt=document.getElementById('tbWifiTxt');
+  if(dot&&txt){dot.className='tb-dot dot-green';txt.textContent=mockD.wifi_ssid;}
+}
+setInterval(updateTopBar, 2000); updateTopBar();
+</script>
+</body></html>
