@@ -85,7 +85,7 @@ details{margin-top:12px}summary{cursor:pointer;color:var(--ui-muted);font-size:v
 <fieldset><legend data-i18n="reset">Сброс</legend>
   <p class="fhint">Все настройки вернутся к заводским: газ, PAS, круиз, события, распиновка и Wi-Fi.</p>
   <form method="POST" action="/system/factory-reset" onsubmit="return confirm('Сбросить все настройки?')">
-  <button type="submit" class="danger"><span data-i18n="factoryReset">Заводской сброс</span></button>
+  <button type="submit" class="danger" data-i18n="factoryReset">Заводской сброс</button>
   </form>
 </fieldset>
 )rawliteral" + getTopBarJs() + R"rawliteral(
