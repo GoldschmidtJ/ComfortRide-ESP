@@ -38,31 +38,31 @@ details{margin-top:12px}summary{cursor:pointer;color:var(--ui-muted);font-size:v
 .odometer{font-size:var(--ui-fs-h2);font-weight:bold;color:var(--ui-accent)}
 </style></head><body>
 )rawliteral" + getTopBarHtml() + getBackMenuHtml() +R"rawliteral(
-<h1>Система</h1>
+<h1 data-i18n="system">Система</h1>
 )rawliteral" + banner + R"rawliteral(
-<fieldset><legend>Пробег</legend>
+<fieldset><legend data-i18n="odometer">Пробег</legend>
   <p class="odometer" id="odomVal">-- км</p>
   <form id="fOdomReset" onsubmit="return confirm('Сбросить пробег до 0?')">
-    <button type="submit" class="danger">Сбросить пробег</button>
+    <button type="submit" class="danger" data-i18n="resetOdometer">Сбросить пробег</button>
   </form>
-  <p class="fhint">Общий пробег хранится в NVS, сбрасывается только вручную.</p>
+  <p class="fhint" data-i18n="odometerKm">Общий пробег хранится в NVS, сбрасывается только вручную.</p>
 </fieldset>
-<fieldset><legend>Сервисный режим (Anti-Police)</legend>
-  <p class="fhint">Ограничение мощности газа в сервисном режиме (активируется 5 быстрыми нажатиями тормоза).</p>
+<fieldset><legend data-i18n="serviceMode">Сервисный режим (Anti-Police)</legend>
+  <p class="fhint" data-i18n="serviceLimit">Ограничение мощности газа в сервисном режиме (активируется 5 быстрыми нажатиями тормоза).</p>
   <div class="slider-row">
-    <label for="svcLimit">Потолок газа: <span class="val" id="svcVal">)rawliteral";
+    <<label for="svcLimit" data-i18n="serviceLimit">Потолок газа:</label> <span class="val" id="svcVal">)rawliteral";
   html += String(serviceThrottleLimitPct);
   html += R"rawliteral(%</span></label>
   <input type="range" id="svcLimit" min="10" max="80" value=")rawliteral";
   html += String(serviceThrottleLimitPct);
   html += R"rawliteral( step="5" oninput="document.getElementById('svcVal').textContent=this.value+'%'">
   </div>
-  <button type="button" id="btnSvcSave">Сохранить</button>
+  <button type="button" id="btnSvcSave" data-i18n="save">Сохранить</button>
   <p class="fhint">Текущее состояние сервисного режима: )rawliteral";
-  html += String(serviceModeActive ? "АКТИВЕН" : "выключен");
+  html += String(serviceModeActive ? "<span data-i18n=\"active\">АКТИВЕН</span>" : "<span data-i18n=\"off\">выключен</span>");
   html += R"rawliteral(</p>
 </fieldset>
-<fieldset><legend>Файл настроек</legend>
+<fieldset><legend data-i18n="settings">Файл настроек</legend>
   <p class="fhint">Экспорт сохраняет все параметры одним JSON-файлом: газ, PAS, круиз, GPIO, Wi-Fi, AP и события. Импорт читает такой файл обратно и перезагружает плату.</p>
   <p><a class="card" href="/system/export" download="bike_controller_settings.json">&#8681; Скачать настройки (JSON)</a></p>
   <form method="POST" action="/system/import" enctype="multipart/form-data">
@@ -78,14 +78,14 @@ details{margin-top:12px}summary{cursor:pointer;color:var(--ui-muted);font-size:v
   </form>
   </details>
 </fieldset>
-<fieldset><legend>Прошивка</legend>
+<fieldset><legend data-i18n="firmware">Прошивка</legend>
   <p class="fhint">Загрузка нового .bin по воздуху. Плата перезагрузится сама.</p>
   <a class="card" href="/update">Обновление прошивки</a>
 </fieldset>
-<fieldset><legend>Сброс</legend>
+<fieldset><legend data-i18n="reset">Сброс</legend>
   <p class="fhint">Все настройки вернутся к заводским: газ, PAS, круиз, события, распиновка и Wi-Fi.</p>
   <form method="POST" action="/system/factory-reset" onsubmit="return confirm('Сбросить все настройки?')">
-  <button type="submit" class="danger">Заводской сброс</button>
+  <button type="submit" class="danger"><span data-i18n="factoryReset">Заводской сброс</span></button>
   </form>
 </fieldset>
 )rawliteral" + getTopBarJs() + R"rawliteral(
