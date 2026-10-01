@@ -460,6 +460,7 @@ function applyI18n(){
   });
 }
 function setUiLang(lang){ localStorage.setItem('bike_ui_lang', lang); UI_LANG = lang; applyI18n(); }
+document.addEventListener('DOMContentLoaded', applyI18n);
 </script>
 )rawliteral"); }
 

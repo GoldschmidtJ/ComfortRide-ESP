@@ -86,9 +86,9 @@ h2{font-size:15px;margin:16px 0 8px}.pin-title{font-size:20px}.pin-badges{color:
 </style></head><body>
 )rawliteral" + getTopBarHtml() + R"rawliteral(
 
-<p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>
-<h1 class="pin-title">GPIO</h1>
-<p class="hint">Назначение пинов сохраняется в NVS и применяется после перезагрузки.
+<p class="back-row"><a class="back-link" href="/" data-i18n="backMenu">&larr; Меню</a></p>
+<h1 class="pin-title" data-i18n="pins">GPIO</h1>
+<p class="hint" data-i18n="savePins">Назначение пинов сохраняется в NVS и применяется после перезагрузки.
 )rawliteral" + String(pinConfigCustom ? "Сейчас действует <b>пользовательская</b> конфигурация." : "Сейчас действует <b>заводская</b> конфигурация.") + R"rawliteral(</p>
 <div class="free"><b>Свободные пины:</b> )rawliteral" + (freeCount ? freeList : "нет") + R"rawliteral(</div>
 )rawliteral" + (errors.length() ? "<div class=\"msg msg-err\">" + errors + "</div>" : "") + R"rawliteral(
@@ -130,10 +130,10 @@ h2{font-size:15px;margin:16px 0 8px}.pin-title{font-size:20px}.pin-badges{color:
   html += "<button type=\"button\" id=\"addCustom\" class=\"add-pin\">+ GPIO</button>";
 
   html += R"rawliteral(
-<button type="submit">Проверить и сохранить</button>
+<button type="submit" data-i18n="checkAndSave">Проверить и сохранить</button>
 </form>
-<form method="POST" action="/settings/pins/reset" onsubmit="return confirm('Вернуть заводскую распиновку?')">
-<button type="submit">Сбросить к заводской</button>
+<form method="POST" action="/settings/pins/reset" onsubmit="return confirm(t('restoreFactory'))">
+<button type="submit" data-i18n="resetToFactory">Сбросить к заводской</button>
 </form>
 )rawliteral" + getTopBarJs() + R"rawliteral(
 <script>
@@ -191,7 +191,7 @@ async function saveRow(row, url) {
       if (url.indexOf('/custom/') !== -1) { setTimeout(function(){ location.reload(); }, 800); }
     }
   } catch (e) {
-    rowMsg(row, false, 'Ошибка сети: ' + e);
+    rowMsg(row, false, t('error') + ' ' + e);
   }
   rowBusy(row, false);
 }
@@ -223,7 +223,7 @@ document.querySelectorAll('.custom-row .row-del').forEach(function(del){
       rowMsg(row, r.ok, t);
       if (r.ok) setTimeout(function(){ location.reload(); }, 800);
       else del.disabled = false;
-    } catch (e) { rowMsg(row, false, 'Ошибка сети: ' + e); del.disabled = false; }
+    } catch (e) { rowMsg(row, false, t('error') + ' ' + e); del.disabled = false; }
   });
 });
 var add = document.getElementById('addCustom');
