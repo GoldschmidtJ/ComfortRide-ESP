@@ -482,11 +482,10 @@ function applyI18n(){
   });
 }
 function updateLangBtn(){
-  var btn = document.getElementById('tbLangBtn');
-  if (btn) btn.textContent = UI_LANG.toUpperCase();
+  var sel = document.getElementById('tbLangSel');
+  if (sel) sel.value = UI_LANG;
 }
 function setUiLang(lang){ localStorage.setItem('bike_ui_lang', lang); UI_LANG = lang; applyI18n(); updateLangBtn(); }
-function toggleUiLang(){ setUiLang(UI_LANG === 'ru' ? 'en' : 'ru'); }
 document.addEventListener('DOMContentLoaded', function(){ applyI18n(); updateLangBtn(); });
 </script>
 )rawliteral"); }
@@ -523,7 +522,10 @@ String getTopBarHtml() {
     <span class="tb-dot dot-gray"></span>
     <span class="u-muted">Выкл</span>
   </div>
-  <button type="button" class="tb-item tb-link" id="tbLangBtn" onclick="toggleUiLang()" style="cursor:pointer;font-weight:700" title="Switch language">RU</button>
+  <select id="tbLangSel" onchange="setUiLang(this.value)" style="margin-left:auto;font-size:var(--ui-fs-tiny);min-height:28px;padding:2px 6px;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;cursor:pointer">
+    <option value="ru">Русский</option>
+    <option value="en">English</option>
+  </select>
 </div>
 )rawliteral");
 }

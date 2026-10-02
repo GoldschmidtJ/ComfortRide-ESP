@@ -8,7 +8,7 @@
 
 ## ✨ Ключевые возможности проекта
 
-- **Модульная прошивка ESP32 (v0.4.0)** — код разделён на слои: `src/core` (чистая логика throttle/PAS/cruise/света, покрывается юнит-тестами), `src/system` (network, storage/NVS, events_engine, joystick, inputs, peripherals, hardware_config), `src/web` (маршруты и HTTP-обработчики по доменам), `src/utils` (иконки, хелперы). Точка входа — `src/main.cpp`.
+- **Модульная прошивка ESP32 (v0.4.1)** — код разделён на слои: `src/core` (чистая логика throttle/PAS/cruise/света, покрывается юнит-тестами), `src/system` (network, storage/NVS, events_engine, joystick, inputs, peripherals, hardware_config), `src/web` (маршруты и HTTP-обработчики по доменам), `src/utils` (иконки, хелперы). Точка входа — `src/main.cpp`.
 - **Throttle-by-Wire:** Мягкий старт/стоп (линейное сглаживание — рампа с гарантированным достижением цели за заданное время, отдельные таймауты старта/стопа), точная калибровка в вольтах, настраиваемая мертвая зона, удержание минимального выходного напряжения (`throttleOutMinV`) для мгновенного отклика мотора, живой захват мин/макс напряжений ручки газа из веб-интерфейса. Аппаратные коэффициенты согласования (делитель входа `divRatio`, усиление ОУ `gain` 1.33) редактируются и сохраняются в NVS.
 - **Собственная реализация PAS & Cruise:** Адаптивная помощь педалирования (до 20 уровней, настраиваемый угол подхвата, 3 режима сглаживания: «по умолчанию» / «свои» / «выкл»), отдельный настраиваемый таймаут быстрой остановки PAS (`pasStopTimeoutMs`), интерактивный помощник калибровки магнитов PAS, круиз-контроль до 100 уровней с автораспределением процентов и конечным автоматом безопасных переходов.
 - **Свет и звук (12V силовые ключи MOSFET):** Фара с режимом ДХО (ШИМ), поворотники с миганием и звуковым щелканьем зуммера, мощный звуковой сигнал (гудок).
@@ -25,17 +25,15 @@
 
 ## 📦 Актуальная прошивка
 
-- **`src/`** — модульная прошивка PlatformIO, версия **v0.4.0**: `core/` (throttle, pas, cruise, light_logic, lights), `system/` (network, storage, events_engine, joystick, inputs, peripherals, hardware_config), `web/` (routes + обработчики settings/pins/events/system/telemetry/emulation), `utils/`. Точка входа — `src/main.cpp`.
+- **`src/`** — модульная прошивка PlatformIO, версия **v0.4.1**: `core/` (throttle, pas, cruise, light_logic, lights), `system/` (network, storage, events_engine, joystick, inputs, peripherals, hardware_config), `web/` (routes + обработчики settings/pins/events/system/telemetry/emulation), `utils/`. Точка входа — `src/main.cpp`.
 
 ### История изменений (Changelog)
 
-#### v0.4.0
-- **Рефакторинг архитектуры:** монолит `main.cpp` разделён на слои `src/core` (чистая, тестируемая логика), `src/system` (сеть, NVS, событийный движок, джойстик, входы, периферия), `src/web` (маршруты и обработчики по доменам), `src/utils` (иконки/хелперы).
-- **Юнит-тесты:** чистая логика света/поворотников (`src/core/light_logic.h`) покрыта тестами Unity (`test/test_light_logic.cpp`, env `native`, `pio test -e native`).
-- **Веб-интерфейс:** новые страницы и обработчики `/settings/events`, `/settings/pins`, `/system` (экспорт/импорт настроек JSON, factory reset), `/status/sys`; HTML-страницы живут в `data/` (LittleFS) с резервными PROGMEM-копиями в прошивке; страница эмуляции разбита на 7 PROGMEM-частей (`html_pages_emulation_*.cpp`), собирается `tools/gen_emulation_page.py` с проверкой byte-identical; иконки матрицы — в `data/matrix_graphics.js`.
-- **OTA:** обновление принимает и образ файловой системы (`.fs.bin`) с валидацией суперблока littlefs (кроме прошивки `.bin`).
-- **Джойстик:** физический джойстик интегрирован в основной цикл (переключение режимов, VRx/VRy/SW); дефолты калибровки газа — `divRatio` 20/30, `gain` 1.33.
-- **Сниффер шины дисплея:** пассивный RX-only захват фронтов на GPIO36 (кольцевой буфер на 4096 фронтов, ISR, старт/стоп/очистка, график и экспорт CSV на `/debug`).
+#### v0.4.1
+- **TopBar language switcher:** кнопку «RU» заменили на dropdown «Русский / English»; выбор сохраняется в `localStorage` (`bike_ui_lang`). Все страницы, включая `data/index.html` и `data/emulation.html`, получили `<select id="tbLangSel">` с i18n-словарём и `data-i18n` атрибутами.
+- **i18n coverage на статических HTML:** `data/index.html` и `data/emulation.html` теперь содержат полный I18N-словарь и все `data-i18n` атрибуты (hub, emulation, drive, pins, events, network, debug, system, backMenu, joystick, brake, pedals, turnL, turnR, light, throttle), как и страницы из прошивки.
+- **Экспорт тестового HTML (`tools/export_ui_preview.py`):** скрипт теперь извлекает `getI18nJs()` из `web_ui.cpp` и внедряет его в `ui_preview/*.html`, обеспечивая полный перевод UI на страницах-preview.
+- **Версия прошивки:** `FIRMWARE_VERSION` → `0.4.1`.
 
 #### v0.3.1
 - **Веб-интерфейс:** Эмуляция вынесена с главной страницы в отдельный раздел `/emulation`; главная страница стала компактным меню.
@@ -224,3 +222,44 @@ pio test -e native     # юнит-тесты чистой логики на хо
 ## 📄 Лицензия
 
 Распространяется под лицензией MIT. Подробности в файле [LICENSE](./LICENSE).
+
+---
+
+## 🤖 Cline Instructions
+
+**Project:** ComfortRide-ESP — ESP32 e-bike controller firmware + web UI.
+
+### Architecture
+- `src/core/` — Pure logic (throttle, PAS, cruise, lights). Unit-tested with Unity (`pio test -e native`).
+- `src/system/` — Network, NVS storage, events_engine, joystick, inputs, peripherals, hardware_config.
+- `src/web/` — HTTP routes + handlers. HTML pages live as PROGMEM strings in `html_pages_*.cpp`, with `data/*.html` as LittleFS fallback.
+- `src/utils/` — Icons, helpers.
+- `data/` — Static HTML for LittleFS (mirrors PROGMEM pages): `index.html`, `emulation.html`, `debug.html`, `matrix_graphics.js`.
+- `tools/` — Build/export scripts: `export_ui_preview.py`, `gen_emulation_page.py`, `split_settings_handlers.py`, `check_ui_theme.py`, `normalize_back_link.py`, `mkpreview.py`, `extract_html.py`.
+
+### Key Commands
+```bash
+pio run                  # build firmware (esp32dev)
+pio run -t upload        # flash via USB
+pio run -t uploadfs      # flash LittleFS (data/)
+pio run -v               # verbose build
+pio test -e native       # unit tests (16 tests for light_logic)
+python3 tools/export_ui_preview.py   # regenerate ui_preview/ from src/
+python3 tools/check_i18n.py          # check i18n dictionary consistency
+```
+
+### i18n (Internationalization)
+- Dictionary lives in `src/web/web_ui.cpp` → `getI18nJs()`. Keys: `ru` + `en` (always identical key set).
+- `data-i18n` attributes on HTML elements are auto-applied by `applyI18n()` on DOMContentLoaded.
+- Language preference persisted in `localStorage.getItem('bike_ui_lang')`.
+- TopBar language switcher: `<select id="tbLangSel" onchange="setUiLang(this.value)">` — present on all pages via `getTopBarHtml()` (C++) and injected into static HTML by `export_ui_preview.py`.
+- Adding a new translable string: add key to both `ru` and `en` blocks in `getI18nJs()`; add `data-i18n="key"` to the element.
+
+### Versioning
+- Single source of truth: `src/system/version.h` → `FIRMWARE_VERSION`.
+- Bump version here, then update `README.md` (v0.x.x entry), `data/index.html` title/version, `data/emulation.html` title/version, `src/web/html_pages_hub.cpp`, `src/web/html_pages_emulation_head.cpp`.
+
+### Testing / QA
+- After any HTML/i18n change, run `python3 tools/export_ui_preview.py` and open `ui_preview/index.html` / `ui_preview/emulation.html` in a browser to verify language switching.
+- Run `python3 tools/check_i18n.py` to verify ru/en key symmetry and no empty values.
+- Run `python3 tools/check_i18n.py` to verify ru/en key symmetry and no empty values.

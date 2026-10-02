@@ -60,7 +60,10 @@ fieldset{border:1px solid var(--ui-border);border-radius:var(--ui-radius);margin
     <span class="tb-dot dot-gray"></span>
     <span class="u-muted">Выкл</span>
   </div>
-  <button type="button" class="tb-item tb-link" id="tbLangBtn" onclick="toggleUiLang()" style="cursor:pointer;font-weight:700" title="Switch language">RU</button>
+  <select id="tbLangSel" onchange="setUiLang(this.value)" style="margin-left:auto;font-size:var(--ui-fs-tiny);min-height:28px;padding:2px 6px;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;cursor:pointer">
+    <option value="ru">Русский</option>
+    <option value="en">English</option>
+  </select>
 </div>
 <p class="back-row"><a class="back-link" href="index.html">&larr; Меню</a></p>
 <h1 data-i18n="drive">Управление тягой</h1>

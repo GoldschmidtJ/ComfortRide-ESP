@@ -11,6 +11,7 @@ topbar_css = re.search(r'getTopBarCss\(\)\s*\{\s*return String\(R\"rawliteral\((
 settings_css = re.search(r'getSettingsCss\(\)\s*\{\s*return String\(R\"rawliteral\((.*?)\)rawliteral\"\);', web_ui, re.DOTALL).group(1)
 topbar_html = re.search(r'getTopBarHtml\(\)\s*\{\s*return String\(R\"rawliteral\((.*?)\)rawliteral\"\);', web_ui, re.DOTALL).group(1)
 settings_js = re.search(r'getSettingsJs\(\)\s*\{\s*return String\(R\"rawliteral\((.*?)\)rawliteral\"\);', web_ui, re.DOTALL).group(1)
+i18n_js = re.search(r'getI18nJs\(\)\s*\{\s*return String\(R\"rawliteral\((.*?)\)rawliteral\"\);', web_ui, re.DOTALL).group(1)
 
 topbar_mock_js = """<script>
 const mockD = { cpu: 9, ram_pct: 37, ram_free_kb: 205, rom_sketch_kb: 1083, rom_total_kb: 1310, wifi_mode: "STA", wifi_ssid: "Donut", temp: 42 };
@@ -41,6 +42,7 @@ def wrap_static(title, body):
 <title>{title}</title><style>{topbar_css}{settings_css}</style></head>
 <body>{topbar_html}<p class="back-row"><a class="back-link" href="index.html">&larr; Меню</a></p>
 {body}
+{i18n_js}
 {topbar_mock_js}
 </body></html>"""
 # 1. index.html
@@ -53,7 +55,7 @@ hub_raw = hub_raw.replace('href="/debug"', 'href="debug.html"')
 hub_raw = hub_raw.replace('href="/system"', 'href="system.html"')
 hub_raw = hub_raw.replace('href="/emulation"', 'href="emulation.html"')
 hub_raw = hub_raw.replace('href="/"', 'href="index.html"')
-hub_raw = re.sub(r'<script>.*?</script>', topbar_mock_js, hub_raw, flags=re.DOTALL)
+hub_raw = re.sub(r'<script>.*?</script>', i18n_js + topbar_mock_js, hub_raw, flags=re.DOTALL)
 (out_dir / "index.html").write_text(hub_raw, encoding="utf-8")
 
 # 2. emulation.html
@@ -61,11 +63,13 @@ emu_raw = (root / "data/emulation.html").read_text(encoding="utf-8")
 matrix_js = (root / "data/matrix_graphics.js").read_text(encoding="utf-8")
 emu_raw = emu_raw.replace('<script src="/matrix_graphics.js"></script>', f'<script>\n{matrix_js}\n</script>')
 emu_raw = emu_raw.replace('href="/"', 'href="index.html"')
+emu_raw = emu_raw.replace('</body>', i18n_js + '</body>')
 (out_dir / "emulation.html").write_text(emu_raw, encoding="utf-8")
 
 # 3. debug.html
 dbg_raw = (root / "data/debug.html").read_text(encoding="utf-8")
 dbg_raw = dbg_raw.replace('href="/"', 'href="index.html"')
+dbg_raw = dbg_raw.replace('</body>', i18n_js + '</body>')
 (out_dir / "debug.html").write_text(dbg_raw, encoding="utf-8")
 
 # 4. drive.html — rebuilt from CPP with correct raws[] mapping (57 elements)
