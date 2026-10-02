@@ -23,6 +23,10 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
   <a href="/wifi" class="tb-item tb-link" title="Настройки Wi-Fi"><span>WiFi:</span> <span class="tb-dot dot-gray" id="tbWifiDot"></span> <span id="tbWifiTxt">...</span></a>
   <div class="tb-item" title="Температура процессора"><span>Temp:</span> <b id="tbTemp">--°C</b></div>
   <div class="tb-item u-dim" title="Bluetooth не используется"><span>BT:</span> <span class="tb-dot dot-gray"></span> <span>Выкл</span></div>
+  <select id="tbLangSel" onchange="setUiLang(this.value)" style="margin-left:auto;font-size:var(--ui-fs-tiny);min-height:28px;padding:2px 6px;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;cursor:pointer">
+    <option value="ru">Русский</option>
+    <option value="en">English</option>
+  </select>
 </div>
 <div class="header"><h1 data-i18n="hub">OpenBike Controller</h1><div class="version">v0.4.0</div></div>
 <a class="card primary" href="/emulation">Эмуляция дисплея и пульта &rarr;</a>

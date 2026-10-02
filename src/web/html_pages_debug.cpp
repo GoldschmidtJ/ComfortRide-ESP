@@ -243,11 +243,10 @@ setInterval(refreshBus, 1000);
 refreshBus();
 
 </script>
-</body></html>
 )rawliteral";
 
   String html = String(part1) + getTopBarCss() + getSettingsCss() + String(part2) +
-                getTopBarHtml() + getBackMenuHtml() + String(part3);
+                getTopBarHtml() + getBackMenuHtml() + String(part3) + getTopBarJs() + "</body></html>";
   server.send(200, "text/html; charset=utf-8", html);
 }
 

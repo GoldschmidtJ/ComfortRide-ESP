@@ -18,6 +18,34 @@ canvas{background:var(--ui-black);border:1px solid var(--ui-border);border-radiu
 .bus-card{max-width:700px;margin-top:22px;padding:14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-card)}.bus-card h2{margin-top:0}.bus-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.bus-link{text-decoration:none;display:inline-block}#busStatus{font-size:var(--ui-fs-small);line-height:1.5;margin:8px 0}#busChart{height:220px}
 a{color:var(--ui-accent)}
 </style></head><body>
+<div class="top-bar-sticky">
+  <div class="tb-item" title="Нагрузка процессора ESP32">
+    <span>CPU:</span> <b id="tbCpu">0%</b>
+  </div>
+  <div class="tb-item" title="Оперативная память (занято / свободно)">
+    <span>RAM:</span> <b id="tbRam">0%</b> <span id="tbRamKb" class="u-muted u-small">(0k)</span>
+  </div>
+  <div class="tb-item" title="Flash память (прошивка / всего)">
+    <span>ROM:</span> <span id="tbRom" class="u-muted">0k</span>
+  </div>
+  <a href="/wifi" class="tb-item tb-link" title="Настройки Wi-Fi">
+    <span>WiFi:</span>
+    <span class="tb-dot dot-gray" id="tbWifiDot"></span>
+    <span id="tbWifiTxt">...</span>
+  </a>
+  <div class="tb-item" title="Температура процессора">
+    <span>Temp:</span> <b id="tbTemp">--°C</b>
+  </div>
+  <div class="tb-item u-dim" title="Bluetooth (не используется)">
+    <span>BT:</span>
+    <span class="tb-dot dot-gray"></span>
+    <span class="u-muted">Выкл</span>
+  </div>
+  <select id="tbLangSel" onchange="setUiLang(this.value)" style="margin-left:auto;font-size:var(--ui-fs-tiny);min-height:28px;padding:2px 6px;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;cursor:pointer">
+    <option value="ru">Русский</option>
+    <option value="en">English</option>
+  </select>
+</div>
 <p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>
 <h1>Отладка (мини-осциллограф)</h1>
 <div class="debug-tools">
@@ -221,5 +249,80 @@ async function refreshBus() {
 setInterval(refreshBus, 1000);
 refreshBus();
 
+</script>
+<script>
+let statusErrCount = 0;
+let statusBusy = false;
+function updateSysStatus(){
+  if (localStorage.getItem('ui_show_topbar') === 'false') {
+    const tb = document.querySelector('.top-bar-sticky');
+    if (tb) tb.style.display = 'none';
+  } else {
+    const tb = document.querySelector('.top-bar-sticky');
+    if (tb) tb.style.display = 'flex';
+  }
+
+  if (statusBusy) return; // не наслаиваем запросы поверх незавершённых — иначе "connection reset by peer"
+  statusBusy = true;
+  fetch("/status/sys").then(r=>r.json()).then(d=>{
+    const cpuEl = document.getElementById("tbCpu");
+    if(cpuEl) cpuEl.innerText = (d.cpu || 0) + "%";
+
+    const ramEl = document.getElementById("tbRam");
+    if(ramEl) ramEl.innerText = (d.ram_pct || 0) + "%";
+    const ramKbEl = document.getElementById("tbRamKb");
+    if(ramKbEl && d.ram_free_kb !== undefined) ramKbEl.innerText = "(" + d.ram_free_kb + "k)";
+
+    const romEl = document.getElementById("tbRom");
+    if(romEl && d.rom_sketch_kb !== undefined) romEl.innerText = d.rom_sketch_kb + "k/" + d.rom_total_kb + "k";
+
+    const dot = document.getElementById("tbWifiDot");
+    const txt = document.getElementById("tbWifiTxt");
+    if(dot && txt){
+      dot.className = "tb-dot ";
+      if(d.wifi_mode === "STA"){
+        dot.className += "dot-green";
+        let display = d.wifi_ssid || "WiFi";
+        if(d.wifi_ip) display += " (" + d.wifi_ip + ")";
+        txt.innerText = display;
+        txt.title = "Доступен по http://" + (d.mdns_host || "openbike.local") + " или http://" + (d.wifi_ip || "");
+      } else if(d.wifi_mode === "AP"){
+        dot.className += "dot-yellow";
+        txt.innerText = "AP: " + (d.wifi_ssid || "Bike") + " (" + (d.wifi_ip || "192.168.4.1") + ")";
+      } else {
+        dot.className += "dot-red";
+        txt.innerText = "Подключение...";
+      }
+    }
+    
+    // Update temperature display
+    const tempEl = document.getElementById("tbTemp");
+    if(tempEl && d.temp !== undefined) {
+      tempEl.innerText = d.temp + "°C";
+      if (d.temp > 75) {
+        tempEl.style.color = "#e74c3c";
+      } else if (d.temp > 60) {
+        tempEl.style.color = "#f39c12";
+      } else {
+        tempEl.style.color = "#eee";
+      }
+    } else if (tempEl) {
+      tempEl.innerText = "--°C";
+    }
+
+    statusErrCount = 0;
+  }).catch(e=>{
+    statusErrCount++;
+    const cpu = document.getElementById("tbCpu"); if(cpu) cpu.innerText = "ERR";
+    const ram = document.getElementById("tbRam"); if(ram) ram.innerText = "ERR";
+    const temp = document.getElementById("tbTemp"); if(temp) temp.innerText = "ERR";
+    const wifi = document.getElementById("tbWifiTxt"); if(wifi) wifi.innerText = "ERR";
+    if (statusErrCount >= 5) {
+      location.reload();
+    }
+  }).finally(()=>{statusBusy=false;});
+}
+setInterval(updateSysStatus, 2000);
+updateSysStatus();
 </script>
 </body></html>

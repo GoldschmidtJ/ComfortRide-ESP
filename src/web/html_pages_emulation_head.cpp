@@ -97,6 +97,10 @@ a.card:hover{background:var(--ui-hover)}a.card:active{background:var(--ui-active
     <span class="tb-dot dot-gray"></span>
     <span class="u-muted">Выкл</span>
   </div>
+  <select id="tbLangSel" onchange="setUiLang(this.value)" style="margin-left:auto;font-size:var(--ui-fs-tiny);min-height:28px;padding:2px 6px;background:var(--ui-button);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;cursor:pointer">
+    <option value="ru">Русский</option>
+    <option value="en">English</option>
+  </select>
 </div>
 
 <div class="header">
