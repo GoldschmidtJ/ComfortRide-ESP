@@ -1,0 +1,91 @@
+# .clinerules — ComfortRide-ESP (OpenBike Controller)
+
+## 1. Стек и архитектура проекта
+
+- **Платформа:** ESP32 (DevKit), фреймворк Arduino (`framework = arduino`), сборка через PlatformIO (`platformio.ini`, env: `esp32dev`, `native` для тестов).
+- **Файловая система:** LittleFS (`board_build.filesystem = littlefs`). Корневая папка файлов ФС: `data/`.
+- **Дисплей / периферия:** LED-матрица 16×32 (два модуля MAX7219 8×32), библиотека `MD_MAX72XX`.
+
+### Структура директорий
+- `src/core/` — Чистая логика (управление газом, PAS, круиз-контроль, конечные автоматы света). Без привязки к `Arduino.h`, покрывается нативными тестами (`env:native`).
+- `src/system/` — Аппаратные драйверы и системные сервисы: сеть (`network.*`), NVS-хранилище (`storage.*`), движок автоматизаций (`events_engine.*`), джойстик (`joystick.*`), распиновка GPIO (`hardware_config.*`), саг-гард батареи (`battery_sag.*`), профилировщик CPU (`cpu_profile.*`), версия (`version.h`).
+- `src/web/` — Веб-сервер: маршруты (`web_routes.*`), статические ресурсы (`static_resources.*`), хэндлеры настроек (`web_handlers_*`), PROGMEM-страницы (`html_pages_*`), UI-тема и интернационализация (`web_ui.*`).
+- `src/utils/` — Вспомогательные утилиты, экранирование HTML/JSON (`utils.h`), бинарные иконки.
+- `data/` — Страницы и ассеты для LittleFS (`index.html`, `emulation.html`, `debug.html`, `matrix_graphics.js`).
+- `test/` — Юнит-тесты на хосте на базе фреймворка Unity (`test_light_logic.cpp`).
+- `tools/` — Python-скрипты автоматизации, валидации и экспорта превью (`export_ui_preview.py`, `check_ui_theme.py`, `normalize_back_link.py`, `gen_emulation_page.py`).
+- `ui_preview/` — Автогенерируемый статический предпросмотр веб-интерфейса для тестирования в браузере без прошивки контроллера.
+
+---
+
+## 2. Стандарты кода и соглашения (Conventions)
+
+### C++ и ESP32
+- **Стандарт:** C++11.
+- **Парсинг HTTP-параметров:** Строго через функции `getArgInt(server, "key", def)` и `getArgFloat(server, "key", def)` из `web/param_utils.h`.
+- **Синхронизация LittleFS и PROGMEM:** Страницы веб-интерфейса раздаются из LittleFS через `sendResource()`. Если файл в LittleFS отсутствует, должен срабатывать резервный fallback из PROGMEM (`sendHubPage`, `sendDebugPage`, etc.).
+- **Разбиение страницы эмуляции:** `html_pages_emulation_*.cpp` разбита на модульные PROGMEM-части. При изменении эмулятора в C++ запускать `tools/gen_emulation_page.py` для обновления `data/emulation.html`.
+
+### Веб-интерфейс и UI-компоненты
+- **Единый источник темы:** CSS-токены `:root` задаются исключительно в `src/web/web_ui.cpp` (`getTopBarCss()`).
+- **Стили страниц:** Базовые стили форм и контролов возвращаются `getSettingsCss()`.
+- **Кнопка возврата в меню:** Строго каноническая строка или вызов `getBackMenuHtml()`:
+  `<p class="back-row"><a class="back-link" href="/" data-i18n="backMenu">&larr; Меню</a></p>`
+  Располагается сразу после TopBar перед `<h1>`. В превью `href="index.html"`.
+- **TopBar:** Вызывается через `getTopBarHtml()`. Включает телеметрию (CPU, RAM, ROM, WiFi, Temp, BT) и селектор языка `<select id="tbLangSel" onchange="setUiLang(this.value)">`.
+
+### Интернационализация (i18n)
+- **Словарь:** Находится в `src/web/web_ui.cpp` → функция `getI18nJs()`.
+- **Симметрия:** Наборы ключей в блоках `ru: { ... }` и `en: { ... }` обязаны совпадать 1-в-1. Пустые значения недопустимы.
+- **Разметка:** Для переводимого текста использовать атрибут `data-i18n="key"`, для всплывающих подсказок — `data-i18n-title="key"`.
+- **Сохранение:** Текущий язык сохраняется в `localStorage.getItem('bike_ui_lang')`.
+
+### Версионирование
+- **Единая точка правды:** макрос `FIRMWARE_VERSION` в `src/system/version.h`.
+- При изменении версии синхронно обновлять:
+  1. `src/system/version.h`
+  2. `README.md` (заголовок, блок актуальной версии, раздел Changelog)
+  3. `<title>` и блок `.version` в `data/index.html` и `data/emulation.html`
+  4. Заголовки в `src/web/html_pages_hub.cpp` и `src/web/html_pages_emulation_head.cpp`
+
+---
+
+## 3. Запрещённые паттерны (Prohibited Patterns)
+
+- ❌ **Запрещено** использовать прямой вызов `server.arg("...").toInt()` / `toFloat()` без валидации — использовать `getArgInt` / `getArgFloat`.
+- ❌ **Запрещено** вызывать блокирующие функции (`delay()`, долгие циклы `while`, `yield()` без необходимости) в веб-обработчиках и основном цикле loop.
+- ❌ **Запрещено** жестко привязывать номера GPIO в бизнес-логике `src/core/` — вся распиновка получается только через `hardware_config.h`.
+- ❌ **Запрещено** использовать произвольные цвета в CSS страниц настроек — использовать токены темы `var(--ui-bg)`, `var(--ui-card)`, `var(--ui-accent)`, `var(--ui-text)` и т.д.
+- ❌ **Запрещено** добавлять ключи только в один язык словаря i18n (`ru` без `en` или наоборот).
+- ❌ **Запрещено** напрямую перезаписывать файлы в `ui_preview/` вручную — они должны генерироваться через `tools/export_ui_preview.py`.
+
+---
+
+## 4. Порядок коммитов и рабочий процесс
+
+### Формат коммитов (Conventional Commits)
+- `feat(scope): ...` — новая функциональность (например, `feat(i18n): ...`, `feat(web): ...`, `feat(core): ...`)
+- `fix(scope): ...` — исправление бага
+- `refactor(scope): ...` — изменение структуры без изменения поведения
+- `test(scope): ...` — добавление или правка тестов
+- `docs: ...` — документация, схемы, README
+- `chore: ...` — служебные скрипты, конфиги сборщика
+
+### Обязательные проверки перед коммитом
+После правок веб-интерфейса или логики:
+1. Запуск юнит-тестов логики:
+   ```bash
+   pio test -e native
+   ```
+2. Проверка соответствия UI-темы:
+   ```bash
+   python3 tools/check_ui_theme.py
+   ```
+3. Проверка каноничности кнопок «Назад»:
+   ```bash
+   python3 tools/normalize_back_link.py
+   ```
+4. Обновление превью веб-интерфейса:
+   ```bash
+   python3 tools/export_ui_preview.py
+   ```
