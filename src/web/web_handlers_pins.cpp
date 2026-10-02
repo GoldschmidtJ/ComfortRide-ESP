@@ -84,9 +84,7 @@ button{margin-top:10px}
 .free{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:8px;padding:10px;margin:10px 0;font-size:var(--ui-fs-small);color:var(--ui-muted)}
 h2{font-size:15px;margin:16px 0 8px}.pin-title{font-size:20px}.pin-badges{color:var(--ui-muted);font-size:11px}
 </style></head><body>
-)rawliteral" + getTopBarHtml() + R"rawliteral(
-
-<p class="back-row"><a class="back-link" href="/" data-i18n="backMenu">&larr; Меню</a></p>
+)rawliteral" + getTopBarHtml() + getBackMenuHtml() + R"rawliteral(
 <h1 class="pin-title" data-i18n="pins">GPIO</h1>
 <p class="hint" data-i18n="savePins">Назначение пинов сохраняется в NVS и применяется после перезагрузки.
 )rawliteral" + String(pinConfigCustom ? "Сейчас действует <b>пользовательская</b> конфигурация." : "Сейчас действует <b>заводская</b> конфигурация.") + R"rawliteral(</p>
