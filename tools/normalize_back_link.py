@@ -11,7 +11,7 @@ import io
 import re
 import sys
 
-BACK = '<p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>'
+BACK = '<p class="back-row"><a class="back-link" href="/" data-i18n="backMenu">&larr; Меню</a></p>'
 # Any <p> (or <p class=...>) wrapping a link to "/" with a back arrow and any label.
 PATTERN = re.compile(
     r'<p(?:\s+class="[^"]*")?>\s*<a\b[^>]*href="/"[^>]*>'

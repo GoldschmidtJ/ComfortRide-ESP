@@ -96,7 +96,7 @@ BACK_MARKUP_RE = re.compile(
     r'<p(?:\s+class="[^"]*")?>\s*<a\b[^>]*href="/"[^>]*>'
     r'(?:&larr;|&#8592;|\u2190)\s*[^<]*</a>\s*</p>'
 )
-BACK_ROW_LINE = '<p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>'
+BACK_ROW_LINE = '<p class="back-row"><a class="back-link" href="/" data-i18n="backMenu">&larr; Меню</a></p>'
 
 
 def read(path):

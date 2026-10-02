@@ -4,6 +4,15 @@
 <title>Отладка</title>
 <style>
 :root{--ui-bg:#101214;--ui-card:#191c20;--ui-button:#252a30;--ui-border:#3b424a;--ui-hover:#30363d;--ui-active:#383f47;--ui-text:#eee;--ui-muted:#8b949e;--ui-focus:#aeb6bf;--ui-accent:#4a90d9;--ui-success:#2ecc71;--ui-warning:#f39c12;--ui-danger:#e74c3c;--ui-purple:#9b59b6;--ui-dark:#0a0f0d;--ui-black:#000;--ui-led:#ff8c00;--ui-led-glow:#ff7700;--ui-led-off:#1e140a;--ui-radius:8px;--ui-control-height:44px;--ui-on-accent:#fff;--ui-success-soft:rgba(46,204,113,.12);--ui-warning-soft:rgba(243,156,18,.15);--ui-danger-soft:rgba(231,76,60,.12);--ui-font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--ui-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--ui-fs-h1:24px;--ui-fs-h2:18px;--ui-fs-body:16px;--ui-fs-small:13px;--ui-fs-mid:14px;--ui-fs-tiny:12px}
+.top-bar-sticky{position:sticky;top:0;top:env(safe-area-inset-top);z-index:9999;background:var(--ui-card);border-bottom:1px solid var(--ui-border);padding:8px 12px;margin:-20px -20px 15px;font-size:var(--ui-fs-tiny);color:var(--ui-muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.tb-item{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.tb-link{color:var(--ui-accent);text-decoration:none;padding:2px 6px;border-radius:6px;background:var(--ui-button);border:1px solid var(--ui-border);transition:background .2s,border-color .2s}
+.tb-link:hover{background:var(--ui-hover);border-color:var(--ui-muted);color:var(--ui-text)}
+.tb-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot-green{background:var(--ui-success);box-shadow:0 0 5px var(--ui-success)}
+.dot-yellow{background:var(--ui-warning);box-shadow:0 0 5px var(--ui-warning)}
+.dot-red{background:var(--ui-danger)}
+.dot-gray{background:var(--ui-muted)}
 .back-link,a.back{display:inline-block;color:var(--ui-accent);text-decoration:none;font-size:var(--ui-fs-small);padding:6px 10px;margin:0 0 0 -10px;border-radius:6px}
 .back-link:hover,a.back:hover{text-decoration:underline;background:var(--ui-button)}
 .back-row{margin:0 0 12px}
@@ -46,7 +55,7 @@ a{color:var(--ui-accent)}
     <option value="en">English</option>
   </select>
 </div>
-<p class="back-row"><a class="back-link" href="/">&larr; Меню</a></p>
+<p class="back-row"><a class="back-link" href="/" data-i18n="backMenu">&larr; Меню</a></p>
 <h1>Отладка (мини-осциллограф)</h1>
 <div class="debug-tools">
   <span class="tool-label">Масштаб времени:</span>

@@ -40,7 +40,7 @@ def wrap_static(title, body):
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title><style>{topbar_css}{settings_css}</style></head>
-<body>{topbar_html}<p class="back-row"><a class="back-link" href="index.html">&larr; Меню</a></p>
+<body>{topbar_html}<p class="back-row"><a class="back-link" href="index.html" data-i18n="backMenu">&larr; Меню</a></p>
 {body}
 {i18n_js}
 {topbar_mock_js}
@@ -79,7 +79,7 @@ assert len(raws) == 57, f"Expected 57 raws, got {len(raws)}"
 drive_html = (
     raws[0] + topbar_css + settings_css +
     raws[1] + topbar_html +
-    '<p class="back-row"><a class="back-link" href="index.html">&larr; Меню</a></p>' +
+    '<p class="back-row"><a class="back-link" href="index.html" data-i18n="backMenu">&larr; Меню</a></p>' +
     raws[2] + "1.10" + raws[3] + "4.10" + raws[4] + "1.15" + raws[5] + "4.10" +
     raws[6] + "0.667" + raws[7] + "1.33" + raws[8] + "checked" + raws[9] + "500" +
     raws[10] + raws[11] + raws[12] +
